@@ -1,0 +1,322 @@
+= Specification: Worktree Management
+:version: 1.0.0
+:source-stories-version: 1.0.0
+:last-updated: 2026-02-24
+:feature: worktree-management
+:prefix: WT
+:toc:
+
+== WT-001
+When the user invokes `wt` with no arguments, the system shall display an interactive fuzzy-search selector listing all existing worktrees for the current repository.
+
+Type:: Event-driven
+Source:: US-001: Criterion 1
+Verification:: Run `wt` with no arguments in a repository that has worktrees. Confirm an interactive fuzzy-search selector appears listing all worktrees.
+
+== WT-002
+The system shall display each worktree entry in the selector with its branch name and relative path.
+
+Type:: Ubiquitous
+Source:: US-001: Criterion 2
+Verification:: Run `wt` with no arguments. Confirm each entry shows the branch name and relative path.
+
+== WT-003
+When the user selects a worktree from the interactive selector, the system shall output a directory-change instruction targeting the selected worktree directory.
+
+Type:: Event-driven
+Source:: US-001: Criterion 3
+Verification:: Run `wt`, select a worktree. Confirm the output is a valid directory-change instruction pointing to the selected worktree.
+
+== WT-004
+If no worktrees exist for the current repository, then the system shall display a message indicating no worktrees are available and suggest creating one.
+
+Type:: Unwanted behavior
+Source:: US-001: Criterion 4
+Verification:: Run `wt` in a repository with no worktrees. Confirm a helpful message is displayed suggesting the create command.
+
+== WT-005
+When the user cancels the interactive selector, the system shall exit without producing output.
+
+Type:: Event-driven
+Source:: US-001: Criterion 5
+Verification:: Run `wt`, press Escape. Confirm the system exits silently with no output.
+
+== WT-006
+When the user invokes `wt create <branch>`, the system shall create a new git worktree in the repository's worktrees directory.
+
+Type:: Event-driven
+Source:: US-002: Criterion 1
+Verification:: Run `wt create feature-x`. Confirm a new worktree exists in the worktrees directory.
+
+== WT-007
+The system shall place new worktrees in a directory named `<repository-name>-worktrees/<branch>` located as a sibling to the main repository directory.
+
+Type:: Ubiquitous
+Source:: US-002: Criterion 2, US-007: Criterion 1
+Verification:: Run `wt create feature-x`. Confirm the worktree is located at `../<repo>-worktrees/feature-x` relative to the main repository.
+
+== WT-008
+When the user invokes `wt create <branch>` and no branch with that name exists locally or remotely, the system shall create a new branch with that name based on the current HEAD of the main worktree.
+
+Type:: Event-driven
+Source:: US-002: Criterion 3
+Verification:: Run `wt create nonexistent-branch` where the branch does not exist. Confirm a new branch is created and the worktree checks it out.
+
+== WT-009
+When the user invokes `wt create <branch>` and a branch with that name already exists, the system shall check out that existing branch in the new worktree.
+
+Type:: Event-driven
+Source:: US-002: Criterion 4
+Verification:: Create a branch `existing-branch`, then run `wt create existing-branch`. Confirm the worktree checks out the existing branch.
+
+== WT-010
+If a worktree for the specified branch already exists, then the system shall display an error message and not create a duplicate.
+
+Type:: Unwanted behavior
+Source:: US-002: Criterion 5
+Verification:: Run `wt create feature-x` twice. Confirm the second invocation displays an error.
+
+== WT-011
+When a worktree is successfully created, the system shall output the path to the new worktree directory.
+
+Type:: Event-driven
+Source:: US-002: Criterion 6
+Verification:: Run `wt create feature-x`. Confirm the output includes the path to the newly created worktree.
+
+== WT-012
+When the user invokes `wt remove <name>`, the system shall remove the specified git worktree and its directory.
+
+Type:: Event-driven
+Source:: US-003: Criterion 1
+Verification:: Run `wt remove feature-x` for an existing worktree. Confirm the worktree directory is removed and `git worktree list` no longer includes it.
+
+== WT-013
+When the user invokes `wt remove` with no name argument, the system shall display an interactive selector to choose which worktree to remove.
+
+Type:: Event-driven
+Source:: US-003: Criterion 2
+Verification:: Run `wt remove` with no arguments. Confirm an interactive selector appears.
+
+== WT-014
+If the specified worktree has uncommitted changes and the `--force` flag is not provided, then the system shall warn the user and refuse to remove the worktree.
+
+Type:: Unwanted behavior
+Source:: US-003: Criterion 3
+Verification:: Create uncommitted changes in a worktree. Run `wt remove <name>` without `--force`. Confirm the system warns and does not remove it.
+
+== WT-015
+When the user invokes `wt remove <name> --force` on a worktree with uncommitted changes, the system shall remove the worktree.
+
+Type:: Event-driven
+Source:: US-003: Criterion 3
+Verification:: Create uncommitted changes in a worktree. Run `wt remove <name> --force`. Confirm the worktree is removed.
+
+== WT-016
+If the specified worktree does not exist when invoking `wt remove`, then the system shall display an error message indicating the worktree was not found.
+
+Type:: Unwanted behavior
+Source:: US-003: Criterion 4
+Verification:: Run `wt remove nonexistent`. Confirm an error message about the worktree not being found.
+
+== WT-017
+When a worktree is successfully removed, the system shall display a confirmation message.
+
+Type:: Event-driven
+Source:: US-003: Criterion 5
+Verification:: Remove an existing worktree. Confirm a success message is displayed.
+
+== WT-018
+When the user invokes `wt list`, the system shall display all worktrees for the current repository with branch name, path, and main worktree indicator.
+
+Type:: Event-driven
+Source:: US-004: Criterion 1, US-004: Criterion 2
+Verification:: Run `wt list` in a repository with multiple worktrees. Confirm all worktrees are listed with branch, path, and main indicator.
+
+== WT-019
+If no worktrees exist beyond the main worktree, then the system shall display a message indicating no additional worktrees exist.
+
+Type:: Unwanted behavior
+Source:: US-004: Criterion 3
+Verification:: Run `wt list` with only the main worktree. Confirm a message indicates no additional worktrees.
+
+== WT-020
+When the user invokes `wt switch <name>`, the system shall output a directory-change instruction targeting the specified worktree directory.
+
+Type:: Event-driven
+Source:: US-005: Criterion 1
+Verification:: Run `wt switch feature-x` for an existing worktree. Confirm the output is a directory-change instruction to that worktree.
+
+== WT-021
+If the specified worktree does not exist when invoking `wt switch`, then the system shall display an error message and list available worktrees.
+
+Type:: Unwanted behavior
+Source:: US-005: Criterion 2
+Verification:: Run `wt switch nonexistent`. Confirm an error is displayed along with a list of available worktrees.
+
+== WT-022
+When the user invokes `wt status`, the system shall display a summary of all worktrees including branch name, clean/dirty state, and ahead/behind remote counts.
+
+Type:: Event-driven
+Source:: US-006: Criterion 1, US-006: Criterion 2
+Verification:: Run `wt status` with multiple worktrees in various states. Confirm each entry shows branch, clean/dirty, ahead/behind counts, and main worktree indicator.
+
+== WT-023
+If a worktree has uncommitted changes, the system shall indicate it as dirty in status output.
+
+Type:: Unwanted behavior
+Source:: US-006: Criterion 3
+Verification:: Make changes in a worktree without committing. Run `wt status`. Confirm the worktree is marked as dirty.
+
+== WT-024
+When the user invokes any `wt` command from within an existing worktree, the system shall resolve the main repository and operate correctly.
+
+Type:: Event-driven
+Source:: US-007: Criterion 2
+Verification:: Navigate into a worktree directory. Run `wt list`. Confirm it correctly lists all worktrees for the same repository.
+
+== WT-025
+When the worktrees directory does not exist, the system shall create it automatically when creating the first worktree.
+
+Type:: Event-driven
+Source:: US-007: Criterion 3
+Verification:: Remove the worktrees directory. Run `wt create feature-x`. Confirm the worktrees directory is created automatically.
+
+== WT-026
+The system shall provide a shell function that wraps the `wt` binary, enabling directory change to the selected worktree.
+
+Type:: Ubiquitous
+Source:: US-008: Criterion 1
+Verification:: Source the shell function. Run `wt` and select a worktree. Confirm the working directory changes to the selected worktree.
+
+== WT-027
+When the user invokes `wt init <shell>`, the system shall output the shell function code for the specified shell.
+
+Type:: Event-driven
+Source:: US-008: Criterion 3
+Verification:: Run `wt init bash`. Confirm valid Bash function code is output. Repeat for `zsh` and `fish`.
+
+== WT-028
+The system shall support shell integration for Bash, Zsh, and Fish shells.
+
+Type:: Ubiquitous
+Source:: US-008: Criterion 2
+Verification:: Run `wt init bash`, `wt init zsh`, and `wt init fish`. Confirm each produces valid shell-specific function code.
+
+== Traceability
+
+[cols="1,2,2", options="header"]
+|===
+| Requirement ID | Requirement Summary | Source
+
+| WT-001
+| Interactive fuzzy selector on no-arg invocation
+| US-001: Criterion 1
+
+| WT-002
+| Selector entry shows branch and path
+| US-001: Criterion 2
+
+| WT-003
+| Selection outputs directory-change instruction
+| US-001: Criterion 3
+
+| WT-004
+| No worktrees message with suggestion
+| US-001: Criterion 4
+
+| WT-005
+| Cancel exits silently
+| US-001: Criterion 5
+
+| WT-006
+| Create worktree command
+| US-002: Criterion 1
+
+| WT-007
+| Worktree placement convention
+| US-002: Criterion 2, US-007: Criterion 1
+
+| WT-008
+| Create new branch if not exists
+| US-002: Criterion 3
+
+| WT-009
+| Checkout existing branch
+| US-002: Criterion 4
+
+| WT-010
+| Prevent duplicate worktree
+| US-002: Criterion 5
+
+| WT-011
+| Output new worktree path
+| US-002: Criterion 6
+
+| WT-012
+| Remove worktree and directory
+| US-003: Criterion 1
+
+| WT-013
+| Interactive remove selector
+| US-003: Criterion 2
+
+| WT-014
+| Refuse remove with uncommitted changes
+| US-003: Criterion 3
+
+| WT-015
+| Force remove with uncommitted changes
+| US-003: Criterion 3
+
+| WT-016
+| Error on nonexistent worktree remove
+| US-003: Criterion 4
+
+| WT-017
+| Remove confirmation message
+| US-003: Criterion 5
+
+| WT-018
+| List worktrees with details
+| US-004: Criterion 1, US-004: Criterion 2
+
+| WT-019
+| No additional worktrees message
+| US-004: Criterion 3
+
+| WT-020
+| Switch outputs directory-change instruction
+| US-005: Criterion 1
+
+| WT-021
+| Switch error with available worktrees
+| US-005: Criterion 2
+
+| WT-022
+| Status summary with branch/dirty/remote
+| US-006: Criterion 1, US-006: Criterion 2
+
+| WT-023
+| Dirty worktree indicator
+| US-006: Criterion 3
+
+| WT-024
+| Commands work from within worktrees
+| US-007: Criterion 2
+
+| WT-025
+| Auto-create worktrees directory
+| US-007: Criterion 3
+
+| WT-026
+| Shell function for directory change
+| US-008: Criterion 1
+
+| WT-027
+| Shell init command outputs function code
+| US-008: Criterion 3
+
+| WT-028
+| Support Bash, Zsh, and Fish
+| US-008: Criterion 2
+|===

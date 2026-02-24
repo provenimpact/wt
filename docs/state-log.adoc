@@ -1,0 +1,15 @@
+= State Transition Log
+:last-updated: 2026-02-24
+
+== TRANSITION-001
+:date: 2026-02-24
+:intent: A CLI tool that makes it easy to create, manage, remove, and switch between git worktrees using a TUI fuzzy selector and a sibling worktrees directory convention
+:type: Feature evolution
+:risk: High
+:features: worktree-management (new)
+:desired-state: The wt CLI binary exists with create, remove, list, switch, status, and init commands. Interactive fuzzy selector on bare invocation. Worktrees stored in <repo>-worktrees/ sibling directory. Shell integration for cd via wt init.
+:prior-state: Empty repository with project scaffolding only
+:capabilities-invoked: needs-stories, needs-spec, needs-design, needs-tasks, needs-implementation
+:constraints-checked: n/a (no constraints defined)
+:result: Achieved
+:artifacts-modified: docs/features/worktree-management/user-stories.adoc (v1.0.0), docs/features/worktree-management/spec.adoc (v1.0.0), docs/features/worktree-management/design.adoc (v1.0.0), docs/features/worktree-management/tasks.adoc (v1.0.0 -> Implemented), AGENTS.md, .gitignore, main.go, go.mod, go.sum, cmd/root.go, cmd/create.go, cmd/remove.go, cmd/list.go, cmd/switch.go, cmd/status.go, cmd/init.go, internal/repo/repo.go, internal/git/git.go, internal/tui/selector.go, internal/shell/shell.go

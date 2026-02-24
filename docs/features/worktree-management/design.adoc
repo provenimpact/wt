@@ -1,0 +1,319 @@
+= Design: Worktree Management
+:version: 1.0.0
+:status: Current
+:source-stories-version: 1.0.0
+:source-spec-version: 1.0.0
+:last-updated: 2026-02-24
+:feature: worktree-management
+:toc:
+
+== Technical Context
+
+This is a greenfield Go CLI tool. The project produces a single binary `wt` that wraps git worktree operations, adding an interactive TUI selector, a convention for worktree placement, and shell integration for directory changes.
+
+The tool is invoked from the terminal. It shells out to `git` for all worktree and repository operations rather than using a Go git library, keeping the implementation simple and compatible with any git version the user has installed.
+
+== Decisions and Constraints
+
+No ADRs exist yet. Key technology decisions:
+
+* **Language:** Go -- produces a single static binary, good TUI library ecosystem.
+* **CLI framework:** `cobra` -- standard Go CLI framework, supports subcommands and flags.
+* **TUI selector:** `bubbletea` + `bubbles` (Charm libraries) -- provides fuzzy filtering and interactive selection without external dependencies like `fzf`.
+* **Git interaction:** Shell out to `git` via `os/exec` -- avoids git library dependency, ensures compatibility with user's git version.
+* **Shell integration pattern:** The binary outputs a path prefixed with `__wt_cd:` on stdout. A thin shell function (sourced in the user's shell config) reads this sentinel, strips the prefix, and runs `cd`. All other output (errors, lists, status) goes to stderr so it is never misinterpreted as a cd instruction.
+
+== System Design
+
+The binary is structured as a command tree with shared core logic.
+
+[mermaid]
+----
+flowchart TD
+    CLI["CLI Entry Point<br/>(cobra root command)"]
+
+    CLI --> SEL["wt (no args)<br/>→ Interactive Selector"]
+    CLI --> CREATE["wt create <branch>"]
+    CLI --> REMOVE["wt remove [name]"]
+    CLI --> LIST["wt list"]
+    CLI --> SWITCH["wt switch <name>"]
+    CLI --> STATUS["wt status"]
+    CLI --> INIT["wt init <shell>"]
+
+    SEL --> TUI["TUI Module<br/>(bubbletea)"]
+    REMOVE -->|no args| TUI
+
+    SEL --> REPO["Repository Module"]
+    CREATE --> REPO
+    REMOVE --> REPO
+    LIST --> REPO
+    SWITCH --> REPO
+    STATUS --> REPO
+
+    REPO --> GIT["Git Module<br/>(os/exec → git)"]
+
+    SEL -->|selection| OUTPUT["Output Module<br/>(cd sentinel to stdout)"]
+    SWITCH --> OUTPUT
+    CREATE --> OUTPUT
+----
+
+=== Module: `cmd/` -- Command Layer (Cobra)
+
+Responsibility: Parse CLI arguments and flags, delegate to core modules, format output.
+
+* `root.go` -- Root command. When invoked with no subcommand, runs the interactive selector.
+* `create.go` -- `wt create <branch>` subcommand.
+* `remove.go` -- `wt remove [name] [--force]` subcommand.
+* `list.go` -- `wt list` subcommand.
+* `switch.go` -- `wt switch <name>` subcommand.
+* `status.go` -- `wt status` subcommand.
+* `init.go` -- `wt init <shell>` subcommand.
+
+=== Module: `internal/repo` -- Repository Resolution
+
+Responsibility: Determine the main repository root, the worktrees directory path, and resolve repository context regardless of whether the user is in the main worktree or a linked worktree.
+
+Key behavior:
+
+1. Run `git rev-parse --git-common-dir` to find the shared `.git` directory.
+2. From the common dir, derive the main repository root.
+3. Compute the worktrees directory: `<parent-of-main-repo>/<repo-name>-worktrees/`.
+
+This works correctly whether invoked from the main repo or from inside any worktree (satisfies WT-024).
+
+=== Module: `internal/git` -- Git Operations
+
+Responsibility: Execute git commands and parse their output.
+
+Functions:
+
+* `ListWorktrees()` -- runs `git worktree list --porcelain`, parses output into structured worktree records (path, branch, HEAD commit, bare flag).
+* `AddWorktree(path, branch string, createBranch bool)` -- runs `git worktree add`.
+* `RemoveWorktree(path string, force bool)` -- runs `git worktree remove [--force]`.
+* `IsDirty(path string)` -- runs `git -C <path> status --porcelain` and checks for output.
+* `AheadBehind(path string)` -- runs `git -C <path> rev-list --left-right --count HEAD...@{upstream}` to get ahead/behind counts.
+* `BranchExists(name string)` -- checks local and remote branches.
+* `MainWorktreePath()` -- determines the main worktree path.
+
+All functions return structured Go types, never raw strings. Errors from git are wrapped with context.
+
+=== Module: `internal/tui` -- Interactive Selector
+
+Responsibility: Display a fuzzy-search list of worktrees using bubbletea.
+
+The TUI model:
+
+* Receives a list of worktree entries (branch name, path, main indicator).
+* Renders a filterable list with fuzzy matching on branch name.
+* Returns the selected worktree's path, or empty string if cancelled (Escape/Ctrl-C).
+
+The selector is reused by both the root command (WT-001) and `wt remove` with no args (WT-013).
+
+=== Module: `internal/shell` -- Shell Integration
+
+Responsibility: Generate shell function code for bash, zsh, and fish.
+
+The shell function pattern:
+
+1. The binary outputs `__wt_cd:<path>` on stdout when a directory change is needed.
+2. All informational output (lists, status, errors, prompts) goes to stderr.
+3. The shell wrapper function captures stdout, checks for the `__wt_cd:` prefix, and runs `cd` if present.
+
+Shell function template (bash/zsh):
+[source,bash]
+----
+wt() {
+  local output
+  output=$(command wt "$@")
+  if [[ "$output" == __wt_cd:* ]]; then
+    cd "${output#__wt_cd:}"
+  elif [[ -n "$output" ]]; then
+    echo "$output"
+  fi
+}
+----
+
+Fish variant:
+[source,fish]
+----
+function wt
+  set -l output (command wt $argv)
+  if string match -q '__wt_cd:*' $output
+    cd (string replace '__wt_cd:' '' $output)
+  else if test -n "$output"
+    echo $output
+  end
+end
+----
+
+=== Output Convention
+
+Commands that trigger a directory change write to **stdout** with the `__wt_cd:` sentinel:
+
+* `wt` (interactive selector, on selection) → stdout: `__wt_cd:/path/to/worktree`
+* `wt switch <name>` → stdout: `__wt_cd:/path/to/worktree`
+* `wt create <branch>` → stdout: `__wt_cd:/path/to/new/worktree`
+
+Commands that display information write to **stderr**:
+
+* `wt list` → stderr
+* `wt status` → stderr
+* `wt remove` → stderr (confirmation messages)
+* Error messages from any command → stderr
+
+This separation ensures the shell wrapper never misinterprets informational output as a cd instruction.
+
+=== Worktree Path Convention
+
+Given a main repository at `/home/user/projects/myrepo`:
+
+* Worktrees directory: `/home/user/projects/myrepo-worktrees/`
+* Worktree for branch `feature-x`: `/home/user/projects/myrepo-worktrees/feature-x/`
+* Worktree for branch `fix/bug-123`: `/home/user/projects/myrepo-worktrees/fix/bug-123/` (preserves branch path separators)
+
+[mermaid]
+----
+flowchart LR
+    PARENT["projects/"]
+    PARENT --> MAIN["myrepo/<br/>(main worktree)"]
+    PARENT --> WTD["myrepo-worktrees/"]
+    WTD --> WT1["feature-x/"]
+    WTD --> WT2["fix/bug-123/"]
+    WTD --> WT3["release/v2/"]
+----
+
+== Primary User Flow: Interactive Selection
+
+[mermaid]
+----
+sequenceDiagram
+    participant User
+    participant Shell as Shell Function
+    participant WT as wt binary
+    participant TUI as TUI Selector
+    participant Git as git
+
+    User->>Shell: wt (no args)
+    Shell->>WT: command wt
+    WT->>Git: git rev-parse --git-common-dir
+    Git-->>WT: /path/to/.git
+    WT->>WT: Resolve main repo + worktrees dir
+    WT->>Git: git worktree list --porcelain
+    Git-->>WT: Worktree list
+    alt No worktrees
+        WT-->>Shell: (stderr) No worktrees found. Use 'wt create <branch>'
+    else Has worktrees
+        WT->>TUI: Display selector
+        TUI-->>User: Interactive fuzzy list
+        alt User selects worktree
+            User->>TUI: Select entry
+            TUI-->>WT: Selected path
+            WT-->>Shell: (stdout) __wt_cd:/path/to/worktree
+            Shell->>Shell: cd /path/to/worktree
+        else User cancels
+            User->>TUI: Escape
+            TUI-->>WT: Empty selection
+            WT-->>Shell: (no output)
+        end
+    end
+----
+
+== Story Resolution
+
+=== US-001: Interactive Worktree Selection
+
+Components:: `cmd/root.go`, `internal/tui`, `internal/repo`, `internal/git`
+Criteria::
+* Interactive fuzzy selector on no-arg invocation → Root command invokes TUI selector with worktree list (WT-001, WT-002)
+* Selection outputs cd instruction → Binary writes `__wt_cd:<path>` to stdout (WT-003)
+* No worktrees message → Checked before TUI launch, message written to stderr (WT-004)
+* Cancel exits silently → TUI returns empty on Escape, binary exits with no stdout (WT-005)
+
+=== US-002: Create Worktree
+
+Components:: `cmd/create.go`, `internal/repo`, `internal/git`
+Criteria::
+* Create worktree → Calls `git.AddWorktree()` with resolved path (WT-006, WT-007)
+* New branch creation → `git.BranchExists()` check, then `AddWorktree(createBranch: true)` (WT-008)
+* Existing branch checkout → `git.BranchExists()` returns true, `AddWorktree(createBranch: false)` (WT-009)
+* Duplicate prevention → Check worktree list for existing branch, error if found (WT-010)
+* Output new path → Write `__wt_cd:<path>` to stdout (WT-011)
+
+=== US-003: Remove Worktree
+
+Components:: `cmd/remove.go`, `internal/tui`, `internal/repo`, `internal/git`
+Criteria::
+* Remove worktree → Calls `git.RemoveWorktree()` (WT-012)
+* Interactive selector when no arg → Reuses TUI selector in remove mode (WT-013)
+* Dirty check → `git.IsDirty()` before removal, require `--force` (WT-014, WT-015)
+* Not found error → Check worktree exists in list before attempting removal (WT-016)
+* Confirmation message → Write to stderr on success (WT-017)
+
+=== US-004: List Worktrees
+
+Components:: `cmd/list.go`, `internal/repo`, `internal/git`
+Criteria::
+* List all worktrees → Calls `git.ListWorktrees()`, formats table to stderr (WT-018)
+* No additional worktrees message → Filter out main, check if empty (WT-019)
+
+=== US-005: Switch to Worktree
+
+Components:: `cmd/switch.go`, `internal/repo`, `internal/git`
+Criteria::
+* Switch outputs cd instruction → Find worktree by name, write `__wt_cd:<path>` to stdout (WT-020)
+* Not found error with list → Error to stderr, list available worktrees (WT-021)
+
+=== US-006: Worktree Status Overview
+
+Components:: `cmd/status.go`, `internal/repo`, `internal/git`
+Criteria::
+* Status summary → For each worktree, call `git.IsDirty()` and `git.AheadBehind()`, format table to stderr (WT-022, WT-023)
+
+=== US-007: Worktree Directory Convention
+
+Components:: `internal/repo`
+Criteria::
+* Sibling worktrees directory → `repo.WorktreesDir()` computes `<parent>/<name>-worktrees/` (WT-007)
+* Works from within worktree → `repo.Resolve()` uses `git rev-parse --git-common-dir` (WT-024)
+* Auto-create directory → `os.MkdirAll()` in create command (WT-025)
+
+=== US-008: Shell Integration
+
+Components:: `cmd/init.go`, `internal/shell`
+Criteria::
+* Shell function wrapping binary → Shell functions capture stdout and eval cd (WT-026)
+* `wt init <shell>` outputs function → Template rendering for bash, zsh, fish (WT-027, WT-028)
+
+== Project Structure
+
+[source]
+----
+wt/
+├── main.go                  # Entry point
+├── go.mod
+├── go.sum
+├── cmd/
+│   ├── root.go              # Root command + interactive selector
+│   ├── create.go            # wt create
+│   ├── remove.go            # wt remove
+│   ├── list.go              # wt list
+│   ├── switch.go            # wt switch
+│   ├── status.go            # wt status
+│   └── init.go              # wt init
+├── internal/
+│   ├── repo/
+│   │   └── repo.go          # Repository resolution
+│   ├── git/
+│   │   └── git.go           # Git operations
+│   ├── tui/
+│   │   └── selector.go      # Bubbletea fuzzy selector
+│   └── shell/
+│       └── shell.go         # Shell function templates
+├── docs/
+│   └── features/
+│       └── worktree-management/
+│           ├── user-stories.adoc
+│           ├── spec.adoc
+│           └── design.adoc
+└── AGENTS.md
+----

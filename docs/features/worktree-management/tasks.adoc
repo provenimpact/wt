@@ -1,0 +1,145 @@
+= Implementation Tasks: Worktree Management
+:version: 1.0.0
+:status: Implemented
+:source-design-version: 1.0.0
+:source-stories-version: 1.0.0
+:source-spec-version: 1.0.0
+:last-updated: 2026-02-24
+:feature: worktree-management
+:toc:
+
+== Overview
+
+Implements the `wt` CLI tool for git worktree management. 4 phases, 11 tasks.
+
+== Phase 1: Foundation
+
+Set up Go project, dependencies, and core modules that all commands depend on.
+
+* [x] TASK-001: Initialize Go module and install dependencies [sequential]
++
+Components:: Project root
+Stories:: All
+Specs:: All
+Description:: Run `go mod init`, add cobra, bubbletea, bubbles, lipgloss. Create `main.go` entry point with cobra root command. Set up project directory structure (`cmd/`, `internal/repo/`, `internal/git/`, `internal/tui/`, `internal/shell/`).
+
+* [x] TASK-002: Implement repository resolution module [sequential]
++
+Components:: `internal/repo/repo.go`
+Stories:: US-007
+Specs:: WT-007, WT-024, WT-025
+Description:: Implement `Resolve()` to find the main repository root using `git rev-parse --git-common-dir`. Implement `WorktreesDir()` to compute `<parent>/<name>-worktrees/`. Implement `EnsureWorktreesDir()` to create the directory if it does not exist. Must work when invoked from main repo or any worktree.
+
+* [x] TASK-003: Implement git operations module [sequential]
++
+Components:: `internal/git/git.go`
+Stories:: US-002, US-003, US-004, US-006
+Specs:: WT-006, WT-008, WT-009, WT-010, WT-012, WT-014, WT-015, WT-022, WT-023
+Description:: Implement `ListWorktrees()` parsing `git worktree list --porcelain`. Implement `AddWorktree()`, `RemoveWorktree()`, `IsDirty()`, `AheadBehind()`, `BranchExists()`. All functions return structured types with wrapped errors.
+
+== Phase 2: Core Commands
+
+Implement the non-interactive commands that operate on worktrees.
+
+* [x] TASK-004: Implement `wt create` command [parallel]
++
+Components:: `cmd/create.go`, `internal/repo`, `internal/git`
+Stories:: US-002
+Specs:: WT-006, WT-007, WT-008, WT-009, WT-010, WT-011, WT-025
+Description:: Parse branch argument. Resolve repo and worktrees dir. Check for duplicate worktree. Check if branch exists (local/remote). Call `git.AddWorktree()` with appropriate flags. Output `__wt_cd:<path>` to stdout on success. Errors to stderr.
+
+* [x] TASK-005: Implement `wt remove` command (non-interactive path) [parallel]
++
+Components:: `cmd/remove.go`, `internal/repo`, `internal/git`
+Stories:: US-003
+Specs:: WT-012, WT-014, WT-015, WT-016, WT-017
+Description:: Parse name argument and `--force` flag. Resolve worktree path. Check if worktree exists. Check dirty state; refuse if dirty without `--force`. Call `git.RemoveWorktree()`. Confirmation to stderr. The interactive path (no arg) is added in Phase 3.
+
+* [x] TASK-006: Implement `wt list` command [parallel]
++
+Components:: `cmd/list.go`, `internal/repo`, `internal/git`
+Stories:: US-004
+Specs:: WT-018, WT-019
+Description:: List all worktrees. Format as a table showing branch, path, and main indicator. Output to stderr. Show "no additional worktrees" message when only the main worktree exists.
+
+* [x] TASK-007: Implement `wt switch` command [parallel]
++
+Components:: `cmd/switch.go`, `internal/repo`, `internal/git`
+Stories:: US-005
+Specs:: WT-020, WT-021
+Description:: Parse name argument. Find matching worktree in list. Output `__wt_cd:<path>` to stdout. On not found: error to stderr with list of available worktrees.
+
+* [x] TASK-008: Implement `wt status` command [parallel]
++
+Components:: `cmd/status.go`, `internal/repo`, `internal/git`
+Stories:: US-006
+Specs:: WT-022, WT-023
+Description:: List all worktrees. For each, call `IsDirty()` and `AheadBehind()`. Format as table with branch, clean/dirty indicator, ahead/behind counts, main indicator. Output to stderr.
+
+== Phase 3: Interactive TUI
+
+Implement the bubbletea fuzzy selector and wire it into commands.
+
+* [x] TASK-009: Implement TUI fuzzy selector [sequential]
++
+Components:: `internal/tui/selector.go`
+Stories:: US-001, US-003
+Specs:: WT-001, WT-002, WT-003, WT-004, WT-005, WT-013
+Description:: Build a bubbletea model with a filterable list of worktree entries. Each entry shows branch name and relative path. Support fuzzy matching on branch name. Return selected worktree path on Enter, empty on Escape/Ctrl-C. Style with lipgloss.
+
+* [x] TASK-010: Wire TUI into root command and remove command [sequential]
++
+Components:: `cmd/root.go`, `cmd/remove.go`
+Stories:: US-001, US-003
+Specs:: WT-001, WT-003, WT-004, WT-005, WT-013
+Description:: Root command (no subcommand): list worktrees, launch TUI, output `__wt_cd:<path>` on selection. Remove command (no arg): list worktrees, launch TUI in remove mode, proceed with removal of selected worktree.
+
+== Phase 4: Shell Integration
+
+Implement the shell init command for cd integration.
+
+* [x] TASK-011: Implement `wt init` command with shell templates [parallel]
++
+Components:: `cmd/init.go`, `internal/shell/shell.go`
+Stories:: US-008
+Specs:: WT-026, WT-027, WT-028
+Description:: Accept shell name argument (bash, zsh, fish). Output the appropriate shell function to stdout. The function captures `wt` binary stdout and runs `cd` when the `__wt_cd:` sentinel is detected. Validate shell argument, error on unsupported shell.
+
+== Traceability
+
+[cols="1,2,2", options="header"]
+|===
+| Story | Spec IDs | Tasks
+
+| US-001: Interactive Worktree Selection
+| WT-001, WT-002, WT-003, WT-004, WT-005
+| TASK-009, TASK-010
+
+| US-002: Create Worktree
+| WT-006, WT-007, WT-008, WT-009, WT-010, WT-011
+| TASK-003, TASK-004
+
+| US-003: Remove Worktree
+| WT-012, WT-013, WT-014, WT-015, WT-016, WT-017
+| TASK-003, TASK-005, TASK-009, TASK-010
+
+| US-004: List Worktrees
+| WT-018, WT-019
+| TASK-003, TASK-006
+
+| US-005: Switch to Worktree
+| WT-020, WT-021
+| TASK-007
+
+| US-006: Worktree Status Overview
+| WT-022, WT-023
+| TASK-003, TASK-008
+
+| US-007: Worktree Directory Convention
+| WT-007, WT-024, WT-025
+| TASK-002, TASK-004
+
+| US-008: Shell Integration
+| WT-026, WT-027, WT-028
+| TASK-011
+|===

@@ -1,0 +1,100 @@
+= User Stories: Worktree Management
+:version: 1.0.0
+:last-updated: 2026-02-24
+:feature: worktree-management
+:toc:
+
+== US-001: Interactive Worktree Selection
+As a developer,
+I want to run `wt` with no arguments and get an interactive fuzzy-search selector of my existing worktrees,
+so that I can quickly switch to the worktree I need without remembering its exact name.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt` with no arguments, the system shall display an interactive fuzzy-search selector listing all existing worktrees for the current repository.
+* [ ] The system shall display each worktree entry with its branch name and relative path.
+* [ ] When the user selects a worktree from the selector, the system shall output a `cd` command targeting the selected worktree directory.
+* [ ] If no worktrees exist for the current repository, then the system shall display a message indicating no worktrees are available and suggest the `wt create` command.
+* [ ] If the user cancels the selector (e.g., pressing Escape), then the system shall exit without output.
+
+== US-002: Create Worktree
+As a developer,
+I want to create a new git worktree from a branch name,
+so that I can work on multiple branches simultaneously without stashing or switching.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt create <branch>`, the system shall create a new git worktree in the repository's worktrees directory.
+* [ ] The system shall place the new worktree in a sibling directory named `<repo>-worktrees/<branch>` relative to the main repository.
+* [ ] When the user invokes `wt create <branch>` and the branch does not exist locally or remotely, the system shall create a new branch with that name based on the current HEAD of the main worktree.
+* [ ] When the user invokes `wt create <branch>` and the branch exists, the system shall check out that existing branch in the new worktree.
+* [ ] If a worktree for the specified branch already exists, then the system shall display an error message and not create a duplicate.
+* [ ] When a worktree is successfully created, the system shall output the path to the new worktree directory.
+
+== US-003: Remove Worktree
+As a developer,
+I want to remove a git worktree I no longer need,
+so that I can keep my workspace clean and avoid confusion.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt remove <name>`, the system shall remove the specified git worktree and its directory.
+* [ ] When the user invokes `wt remove` with no name argument, the system shall display an interactive selector to choose which worktree to remove.
+* [ ] If the specified worktree has uncommitted changes, then the system shall warn the user and require a `--force` flag to proceed.
+* [ ] If the specified worktree does not exist, then the system shall display an error message indicating the worktree was not found.
+* [ ] When a worktree is successfully removed, the system shall display a confirmation message.
+
+== US-004: List Worktrees
+As a developer,
+I want to see all worktrees for the current repository,
+so that I can understand what branches I have checked out and where.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt list`, the system shall display all worktrees for the current repository.
+* [ ] The system shall display each worktree with its branch name, path, and whether it is the main worktree.
+* [ ] If no worktrees exist beyond the main worktree, then the system shall display a message indicating no additional worktrees exist.
+
+== US-005: Switch to Worktree
+As a developer,
+I want to switch to a specific worktree by name without using the interactive selector,
+so that I can navigate quickly when I already know the worktree name.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt switch <name>`, the system shall output a `cd` command targeting the specified worktree directory.
+* [ ] If the specified worktree does not exist, then the system shall display an error message and list available worktrees.
+
+== US-006: Worktree Status Overview
+As a developer,
+I want to see the status of all my worktrees at a glance,
+so that I can identify which worktrees have uncommitted changes or are behind their remote.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt status`, the system shall display a summary of all worktrees including branch name, clean/dirty state, and ahead/behind remote counts.
+* [ ] The system shall indicate which worktree is the main worktree.
+* [ ] If a worktree has uncommitted changes, the system shall mark it as dirty.
+
+== US-007: Worktree Directory Convention
+As a developer,
+I want worktrees to be stored in a predictable sibling directory,
+so that my workspace stays organized and I can find worktrees from any repository.
+
+Acceptance Criteria:
+
+* [ ] The system shall store all worktrees in a directory named `<repository-name>-worktrees` located as a sibling to the main repository directory.
+* [ ] When the user invokes any `wt` command from within an existing worktree, the system shall resolve the main repository and operate correctly.
+* [ ] When the worktrees directory does not exist, the system shall create it automatically on the first `wt create` invocation.
+
+== US-008: Shell Integration
+As a developer,
+I want `wt` to integrate with my shell so that selecting a worktree actually changes my working directory,
+so that I do not have to manually copy and paste paths.
+
+Acceptance Criteria:
+
+* [ ] The system shall provide a shell function that wraps the `wt` binary, enabling `cd` to the selected worktree directory.
+* [ ] The system shall support Bash, Zsh, and Fish shells.
+* [ ] When the user invokes `wt init <shell>`, the system shall output the shell function code for the specified shell.
+* [ ] The shell function shall execute the `wt` binary and evaluate its output to change directory when appropriate.
