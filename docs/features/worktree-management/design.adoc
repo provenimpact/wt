@@ -27,7 +27,7 @@ No ADRs exist yet. Key technology decisions:
 
 The binary is structured as a command tree with shared core logic.
 
-[mermaid]
+[source,mermaid]
 ----
 flowchart TD
     CLI["CLI Entry Point<br/>(cobra root command)"]
@@ -180,7 +180,7 @@ Given a main repository at `/home/user/projects/myrepo`:
 * Worktree for branch `feature-x`: `/home/user/projects/myrepo-worktrees/feature-x/`
 * Worktree for branch `fix/bug-123`: `/home/user/projects/myrepo-worktrees/fix/bug-123/` (preserves branch path separators)
 
-[mermaid]
+[source,mermaid]
 ----
 flowchart LR
     PARENT["projects/"]
@@ -193,7 +193,7 @@ flowchart LR
 
 == Primary User Flow: Interactive Selection
 
-[mermaid]
+[source,mermaid]
 ----
 sequenceDiagram
     participant User

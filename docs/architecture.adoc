@@ -20,7 +20,7 @@ The tool is a single static binary with no daemon, no persistent state, and no n
 
 == System Context (C4 Level 1)
 
-[mermaid]
+[source,mermaid]
 ----
 C4Context
   title System Context Diagram
@@ -41,7 +41,7 @@ The developer invokes `wt` through a shell wrapper function (installed via `wt i
 
 == Container View (C4 Level 2)
 
-[mermaid]
+[source,mermaid]
 ----
 C4Container
   title Container Diagram
@@ -67,7 +67,7 @@ C4Container
 
 The binary has meaningful internal structure worth documenting.
 
-[mermaid]
+[source,mermaid]
 ----
 C4Component
   title Component Diagram - wt binary
@@ -122,7 +122,7 @@ C4Component
 
 The system has no persistent state. All data flows through git and the filesystem:
 
-[mermaid]
+[source,mermaid]
 ----
 flowchart LR
     CMD["Command"] --> REPO["Resolve repo"]
