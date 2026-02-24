@@ -1,0 +1,27 @@
+= ADR-0002: Use cobra for CLI framework
+:status: Accepted
+:date: 2026-02-24
+:deciders: Project team
+
+== Context
+
+The `wt` tool needs a subcommand structure (`wt create`, `wt remove`, `wt list`, etc.) with flags, argument validation, and auto-generated help text.
+
+== Decision
+
+Use the `spf13/cobra` library for CLI command parsing and routing.
+
+== Consequences
+
+* Well-established standard for Go CLIs (used by kubectl, docker, hugo, gh).
+* Built-in subcommand support, flag parsing, argument validation, and shell completion generation.
+* Adds one dependency but it is stable and widely maintained.
+* Help text and usage messages are auto-generated, reducing boilerplate.
+
+== Alternatives Considered
+
+=== urfave/cli
+Another popular Go CLI library. Comparable features. Rejected due to less ecosystem familiarity and slightly less ergonomic subcommand API for this use case.
+
+=== Standard library (flag package)
+No dependency added. Rejected because implementing subcommand routing, help generation, and argument validation manually adds significant boilerplate without benefit.

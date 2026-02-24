@@ -1,0 +1,161 @@
+= System Architecture
+:version: 1.0.0
+:last-updated: 2026-02-24
+:toc:
+
+== Feature Design Sources
+
+[cols="1,1", options="header"]
+|===
+| Feature | Design Version
+
+| worktree-management | 1.0.0
+|===
+
+== Overview
+
+`wt` is a command-line tool written in Go that simplifies git worktree management. It wraps the `git worktree` command with an interactive TUI selector, a predictable directory convention, and shell integration for seamless directory switching.
+
+The tool is a single static binary with no daemon, no persistent state, and no network access. It interacts with the local filesystem and the `git` CLI.
+
+== System Context (C4 Level 1)
+
+[mermaid]
+----
+C4Context
+  title System Context Diagram
+
+  Person(dev, "Developer", "Uses the terminal to manage git worktrees")
+  System(wt, "wt CLI", "Git worktree management tool with TUI selector and shell integration")
+  System_Ext(git, "git", "Version control system (local installation)")
+  System_Ext(shell, "Shell", "User's shell (bash, zsh, or fish) with wt wrapper function")
+  System_Ext(fs, "Filesystem", "Local filesystem where repos and worktrees reside")
+
+  Rel(dev, shell, "Invokes wt commands")
+  Rel(shell, wt, "Executes binary, evaluates cd output")
+  Rel(wt, git, "Shells out for all git operations")
+  Rel(wt, fs, "Creates/removes worktree directories")
+----
+
+The developer invokes `wt` through a shell wrapper function (installed via `wt init <shell>`). The wrapper captures `wt`'s stdout for cd sentinel detection and evaluates it to change the shell's working directory. All informational output goes to stderr.
+
+== Container View (C4 Level 2)
+
+[mermaid]
+----
+C4Container
+  title Container Diagram
+
+  Person(dev, "Developer", "Terminal user")
+
+  System_Boundary(wtsys, "wt CLI") {
+    Container(binary, "wt binary", "Go", "Single static binary. Parses commands, orchestrates git operations, renders TUI.")
+    Container(shellfn, "Shell wrapper function", "bash/zsh/fish", "Thin function that captures binary stdout and runs cd when __wt_cd: sentinel detected.")
+  }
+
+  System_Ext(git, "git CLI", "Worktree, branch, and status operations")
+  System_Ext(fs, "Filesystem", "Repo and worktree directories")
+
+  Rel(dev, shellfn, "Types wt commands")
+  Rel(shellfn, binary, "Executes with args, captures stdout")
+  Rel(binary, git, "os/exec calls", "git worktree, git status, git branch, etc.")
+  Rel(binary, fs, "mkdir, stat", "Worktree directory management")
+  Rel(shellfn, dev, "cd to worktree / display stderr output")
+----
+
+== Component View (C4 Level 3)
+
+The binary has meaningful internal structure worth documenting.
+
+[mermaid]
+----
+C4Component
+  title Component Diagram - wt binary
+
+  Container_Boundary(binary, "wt binary") {
+    Component(cmd, "Command Layer", "Go / cobra", "Parses CLI args and flags, routes to subcommands: create, remove, list, switch, status, init")
+    Component(tui, "TUI Module", "Go / bubbletea", "Interactive fuzzy-search selector for worktree entries. Used by root command and remove command.")
+    Component(repo, "Repository Module", "Go", "Resolves main repo root and worktrees directory path. Works from main repo or any linked worktree.")
+    Component(gitmod, "Git Module", "Go / os/exec", "Executes git commands: worktree list/add/remove, status, branch, rev-list. Parses porcelain output.")
+    Component(shellmod, "Shell Module", "Go", "Generates shell wrapper function code for bash, zsh, and fish.")
+  }
+
+  System_Ext(git, "git CLI", "Local git installation")
+
+  Rel(cmd, tui, "Launches selector")
+  Rel(cmd, repo, "Resolves paths")
+  Rel(cmd, gitmod, "Worktree operations")
+  Rel(cmd, shellmod, "Generates init output")
+  Rel(gitmod, git, "os/exec")
+  Rel(repo, git, "git rev-parse")
+----
+
+=== Component Responsibilities
+
+**Command Layer** (`cmd/`) -- 7 cobra commands:
+
+* `root` (no subcommand) -- interactive selector -> `__wt_cd:<path>` on stdout
+* `create <branch>` -- creates worktree, outputs `__wt_cd:<path>` on stdout
+* `remove [name] [--force]` -- removes worktree, interactive selector if no arg
+* `list` -- tabular worktree list to stderr
+* `switch <name>` -- outputs `__wt_cd:<path>` on stdout
+* `status` -- tabular status with dirty/clean and ahead/behind to stderr
+* `init <shell>` -- outputs shell function code to stdout
+
+**TUI Module** (`internal/tui/`) -- bubbletea model with fuzzy text input filter. Renders branch names and relative paths. Returns selected path on Enter, empty string on Esc/Ctrl-C.
+
+**Repository Module** (`internal/repo/`) -- uses `git rev-parse --git-common-dir` to find the shared `.git` directory, derives main repo root as its parent, computes `<parent>/<name>-worktrees/` as the worktrees directory. Works transparently from main repo or any linked worktree.
+
+**Git Module** (`internal/git/`) -- thin wrapper around `git` CLI via `os/exec`. Functions: `ListWorktrees`, `AddWorktree`, `RemoveWorktree`, `IsDirty`, `AheadBehind`, `BranchExists`. All return structured Go types with wrapped errors.
+
+**Shell Module** (`internal/shell/`) -- template strings for bash/zsh and fish shell functions. The wrapper captures `command wt` stdout, checks for `__wt_cd:` prefix, and runs `cd` if detected.
+
+== Technology Stack
+
+* **Language:** Go 1.26 -- <<adrs/0001-use-go.adoc#,ADR-0001>>
+* **CLI framework:** cobra -- <<adrs/0002-use-cobra-for-cli.adoc#,ADR-0002>>
+* **TUI:** bubbletea + bubbles + lipgloss -- <<adrs/0003-use-bubbletea-for-tui.adoc#,ADR-0003>>
+* **Git interaction:** `os/exec` -> `git` CLI -- <<adrs/0004-shell-out-to-git.adoc#,ADR-0004>>
+* **Build:** single static binary, no CGO
+
+== Data Flow
+
+The system has no persistent state. All data flows through git and the filesystem:
+
+[mermaid]
+----
+flowchart LR
+    CMD["Command"] --> REPO["Resolve repo"]
+    REPO -->|"git rev-parse"| GIT["git CLI"]
+    GIT -->|".git common dir"| REPO
+    REPO --> PATHS["Main repo path\nWorktrees dir path"]
+    PATHS --> OP["Git operation"]
+    OP -->|"git worktree list\nadd/remove/status"| GIT
+    GIT -->|"Structured result"| OP
+    OP --> OUT["Output"]
+    OUT -->|"__wt_cd:<path>"| STDOUT["stdout\n(shell wrapper reads)"]
+    OUT -->|"Tables, messages, errors"| STDERR["stderr\n(user sees directly)"]
+----
+
+== Cross-Cutting Concerns
+
+=== Output Convention
+
+The stdout/stderr split is the core architectural pattern:
+
+* **stdout** -- reserved exclusively for the `__wt_cd:<path>` sentinel. The shell wrapper function reads stdout and runs `cd` when detected.
+* **stderr** -- all human-readable output: tables, status messages, errors, TUI rendering.
+
+This ensures the shell wrapper never misinterprets informational output as a directory-change instruction.
+
+=== Error Handling
+
+All errors from git commands are wrapped with context using `fmt.Errorf("context: %w", err)`. Cobra's `SilenceErrors` and `SilenceUsage` are enabled; the root `Execute()` function prints errors to stderr with an `Error:` prefix.
+
+=== Directory Convention
+
+Worktrees are placed in `<parent>/<repo-name>-worktrees/<branch>/` as a sibling to the main repository. This convention is enforced by the Repository Module and is not configurable.
+
+=== Repository Resolution
+
+The `git rev-parse --git-common-dir` command is used to find the shared git directory. This works from both the main worktree (returns `.git` relative) and linked worktrees (returns the absolute path to the main repo's `.git`). The main repo root is the parent of this common dir.

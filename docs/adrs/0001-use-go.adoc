@@ -1,0 +1,31 @@
+= ADR-0001: Use Go for the CLI
+:status: Accepted
+:date: 2026-02-24
+:deciders: Project team
+
+== Context
+
+The `wt` tool is a command-line utility for managing git worktrees. It needs to be distributed as a single binary with no runtime dependencies, start instantly, and run on macOS, Linux, and Windows.
+
+== Decision
+
+Use Go as the implementation language.
+
+== Consequences
+
+* Single static binary with no runtime dependency simplifies installation (`go install` or download).
+* Fast startup time (sub-10ms) -- important for an interactive CLI tool invoked frequently.
+* Excellent cross-compilation support for all target platforms.
+* Rich ecosystem of CLI libraries (cobra, bubbletea).
+* Team must be comfortable with Go. No generics-heavy abstractions needed for this project scope.
+
+== Alternatives Considered
+
+=== Rust
+Strong candidate. Equivalent single-binary story, better performance characteristics, strong type system. Rejected due to longer compile times during development and less mature TUI library ecosystem compared to Go's Charm libraries. Would be a valid choice.
+
+=== TypeScript (Node.js / Bun)
+Fast development velocity but requires a runtime to be installed. Distribution is more complex (npm global install or bundled binary via pkg/bun compile). Rejected due to runtime dependency requirement.
+
+=== Shell script (bash)
+Zero compilation, portable on Unix. Rejected because implementing a TUI fuzzy selector in pure bash is fragile, and cross-platform support (fish, Windows) would be very difficult.

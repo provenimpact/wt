@@ -1,0 +1,31 @@
+= ADR-0003: Use bubbletea for interactive TUI
+:status: Accepted
+:date: 2026-02-24
+:deciders: Project team
+
+== Context
+
+The `wt` tool needs an interactive fuzzy-search selector for choosing worktrees. This must work in any terminal, handle keyboard input (arrow keys, escape, enter, typed characters), and render a filterable list.
+
+== Decision
+
+Use the Charm stack: `bubbletea` for the TUI framework, `bubbles` for the text input component, and `lipgloss` for styling.
+
+== Consequences
+
+* Self-contained TUI with no external tool dependency (no need for fzf to be installed).
+* Elm-architecture model (Init/Update/View) makes the selector logic testable without a real terminal.
+* Lipgloss styling keeps the UI visually clean with minimal code.
+* Adds three dependencies (bubbletea, bubbles, lipgloss) plus their transitive deps.
+* The TUI model can be unit-tested by sending key messages and inspecting state, without requiring an interactive terminal.
+
+== Alternatives Considered
+
+=== External fzf dependency
+Shell out to `fzf` for selection. Simpler implementation but requires fzf to be installed. Rejected because an external dependency for the core feature (interactive selection) is an unacceptable UX tradeoff -- the tool should work out of the box.
+
+=== fzf with fallback to numbered list
+Use fzf if installed, fall back to a numbered list otherwise. Rejected because the degraded experience (numbered list) is significantly worse, and conditional behavior makes testing harder.
+
+=== promptui
+Older Go library for terminal prompts. Rejected because it is less actively maintained and has weaker fuzzy filtering compared to bubbletea + bubbles.

@@ -1,0 +1,32 @@
+= ADR-0004: Shell out to git CLI instead of using a Go git library
+:status: Accepted
+:date: 2026-02-24
+:deciders: Project team
+
+== Context
+
+The `wt` tool needs to perform git operations: list worktrees, add/remove worktrees, check dirty state, check branch existence, and compute ahead/behind counts. These can be done either by calling the `git` CLI via `os/exec` or by using a Go git library like `go-git`.
+
+== Decision
+
+Shell out to the local `git` CLI via `os/exec` for all git operations.
+
+== Consequences
+
+* Uses the same git binary the developer already has, ensuring 100% compatibility with their repository format and configuration.
+* No need to handle git internals (pack files, index format, config parsing).
+* Porcelain output parsing is straightforward for the commands we use.
+* Requires `git` to be installed on the system (reasonable for a tool that manages git worktrees).
+* Slightly slower than in-process git library calls due to process spawning, but negligible for the small number of commands per invocation.
+* Simpler to maintain -- git worktree behavior changes are automatically inherited.
+
+== Alternatives Considered
+
+=== go-git (github.com/go-git/go-git)
+Pure Go git implementation. In-process, no external dependency. Rejected because:
+1. Worktree support in go-git is incomplete -- `git worktree list/add/remove` are not fully exposed.
+2. Adds a large dependency tree for limited benefit.
+3. Potential behavior divergence from the user's actual git version.
+
+=== libgit2 via git2go
+C library with Go bindings. Full git functionality. Rejected because it requires CGO and a C compiler, breaking the single static binary story and complicating cross-compilation.

@@ -1,6 +1,19 @@
 = State Transition Log
 :last-updated: 2026-02-24
 
+== TRANSITION-002
+:date: 2026-02-24
+:intent: Complete missing workflow capabilities: tests, architecture, ADRs, and design reconciliation
+:type: Artifact maintenance
+:risk: Medium
+:features: worktree-management (maintained)
+:desired-state: Full test coverage for all 28 spec requirements, architecture document reflecting the system, ADRs recording all technology decisions, design reconciled with implementation
+:prior-state: Feature implemented but missing: tests (0 test files), architecture doc, ADRs, design had 3 minor divergences from implementation
+:capabilities-invoked: needs-tests, needs-architecture, needs-adr, needs-implementation (divergence detection and design reconciliation)
+:constraints-checked: n/a (no constraints defined)
+:result: Achieved
+:artifacts-modified: internal/tui/selector_test.go (new), internal/shell/shell_test.go (new), internal/git/git_test.go (new), internal/repo/repo_test.go (new), cmd/cmd_test.go (new), docs/architecture.adoc (v1.0.0, new), docs/adrs/index.adoc (v1.0.0, new), docs/adrs/0001-use-go.adoc (new), docs/adrs/0002-use-cobra-for-cli.adoc (new), docs/adrs/0003-use-bubbletea-for-tui.adoc (new), docs/adrs/0004-shell-out-to-git.adoc (new), docs/features/worktree-management/design.adoc (v1.0.0 -> v1.0.1, reconciled)
+
 == TRANSITION-001
 :date: 2026-02-24
 :intent: A CLI tool that makes it easy to create, manage, remove, and switch between git worktrees using a TUI fuzzy selector and a sibling worktrees directory convention
