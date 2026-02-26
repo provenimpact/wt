@@ -1,5 +1,5 @@
 // Feature: worktree-management
-// Spec version: 1.0.0
+// Spec version: 1.1.0
 // Generated from: spec.adoc
 //
 // Integration tests exercising CLI commands against real git repos.
@@ -24,6 +24,16 @@
 //   WT-022: Status summary with branch/dirty/remote
 //   WT-023: Dirty worktree indicator
 //   WT-025: Auto-create worktrees directory
+//   WT-032: Create flat directory for branches with slashes
+//   WT-033: Preserve original branch name for git operations
+//   WT-034: Remove empty parent directories on worktree removal
+//   WT-039: Direct creation bypasses interactive selector
+//   WT-040: Create branch from specified base reference
+//   WT-043: Tab completion for create suggests branches
+//   WT-044: Tab completion for switch suggests worktrees
+//   WT-045: Tab completion for remove suggests linked worktrees
+//   WT-046: Completion command outputs shell scripts
+//   WT-047: Error on unsupported shell for completion
 
 package cmd
 
@@ -449,5 +459,295 @@ func TestInit_UnsupportedShell(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "unsupported") {
 		t.Errorf("stderr should mention 'unsupported', got: %s", stderr)
+	}
+}
+
+// --- Branch name sanitization tests ---
+
+// WT-032: When the user invokes `wt create fix/bug-123`, the system shall
+// create the worktree directory as `fix-bug-123` within the worktrees directory.
+func TestCreate_SlashBranch_FlatDirectory(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	stdout, stderr, err := runWt(t, dir, "create", "fix/bug-123")
+	if err != nil {
+		t.Fatalf("wt create fix/bug-123 failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// Directory should be flat: fix-bug-123, not fix/bug-123
+	expectedDir := filepath.Join(filepath.Dir(dir), "testrepo-worktrees", "fix-bug-123")
+	if !strings.Contains(stdout, "__wt_cd:"+expectedDir) {
+		t.Errorf("stdout = %q, want __wt_cd:%s", stdout, expectedDir)
+	}
+
+	// Flat directory should exist
+	if _, err := os.Stat(expectedDir); os.IsNotExist(err) {
+		t.Error("sanitized worktree directory was not created")
+	}
+
+	// Nested directory should NOT exist
+	nestedDir := filepath.Join(filepath.Dir(dir), "testrepo-worktrees", "fix", "bug-123")
+	if _, err := os.Stat(nestedDir); err == nil {
+		t.Error("nested directory should not exist; directory should be flat")
+	}
+}
+
+// WT-033: The system shall preserve the original branch name for all git operations.
+func TestCreate_SlashBranch_PreservesBranchName(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	_, stderr, err := runWt(t, dir, "create", "fix/bug-456")
+	if err != nil {
+		t.Fatalf("wt create fix/bug-456 failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// Git branch should use original name, not sanitized
+	cmd := exec.Command("git", "branch")
+	cmd.Dir = dir
+	out, _ := cmd.Output()
+	if !strings.Contains(string(out), "fix/bug-456") {
+		t.Errorf("git branch should show 'fix/bug-456', got: %s", out)
+	}
+
+	// wt list should show original branch name
+	_, listStderr, err := runWt(t, dir, "list")
+	if err != nil {
+		t.Fatalf("wt list failed: %v", err)
+	}
+	if !strings.Contains(listStderr, "fix/bug-456") {
+		t.Errorf("wt list should show 'fix/bug-456', got: %s", listStderr)
+	}
+}
+
+// WT-034: When a worktree is removed, if the removal leaves empty parent
+// directories within the worktrees directory, then the system shall remove
+// those empty parent directories.
+func TestRemove_CleansEmptyParentDirs(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Manually create a nested worktree structure to simulate legacy behavior
+	// (before sanitization, fix/bug-123 would create nested dirs)
+	wtDir := filepath.Join(filepath.Dir(dir), "testrepo-worktrees")
+	nestedPath := filepath.Join(wtDir, "fix", "old-bug")
+	os.MkdirAll(nestedPath, 0o755)
+
+	// Create a worktree at the nested path using git directly
+	gitRun(t, dir, "worktree", "add", "-b", "fix-old-bug", nestedPath)
+
+	// Remove via wt
+	_, stderr, err := runWt(t, dir, "remove", "fix-old-bug")
+	if err != nil {
+		t.Fatalf("wt remove failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// The orphan 'fix' directory should have been cleaned up
+	fixDir := filepath.Join(wtDir, "fix")
+	if _, err := os.Stat(fixDir); err == nil {
+		t.Error("empty 'fix' parent directory should have been removed")
+	}
+}
+
+// WT-039: When the user invokes `wt create <branch>`, the system shall use
+// the direct-branch creation flow without launching the interactive selector.
+func TestCreate_DirectBranch_NoInteraction(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Direct create should work without hanging waiting for TTY input
+	stdout, stderr, err := runWt(t, dir, "create", "direct-branch")
+	if err != nil {
+		t.Fatalf("wt create direct-branch failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "__wt_cd:") {
+		t.Errorf("stdout should contain __wt_cd:, got: %q", stdout)
+	}
+}
+
+// WT-040: When the user invokes `wt create <branch> --base <ref>`, the system
+// shall create a new branch starting from the specified base reference.
+func TestCreate_WithBaseFlag(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create a branch with some commits
+	gitRun(t, dir, "checkout", "-b", "develop")
+	gitRun(t, dir, "commit", "--allow-empty", "-m", "develop commit")
+	gitRun(t, dir, "checkout", "main")
+
+	stdout, stderr, err := runWt(t, dir, "create", "new-feature", "--base", "develop")
+	if err != nil {
+		t.Fatalf("wt create --base failed: %v\nstderr: %s", err, stderr)
+	}
+
+	if !strings.Contains(stdout, "__wt_cd:") {
+		t.Errorf("stdout should contain __wt_cd:, got: %q", stdout)
+	}
+
+	// Verify the new branch was created
+	cmd := exec.Command("git", "branch")
+	cmd.Dir = dir
+	out, _ := cmd.Output()
+	if !strings.Contains(string(out), "new-feature") {
+		t.Error("new-feature branch should exist")
+	}
+
+	// Verify the branch is based on develop (has the develop commit)
+	wtPath := filepath.Join(filepath.Dir(dir), "testrepo-worktrees", "new-feature")
+	cmd = exec.Command("git", "-C", wtPath, "log", "--oneline", "-1")
+	out, _ = cmd.Output()
+	if !strings.Contains(string(out), "develop commit") {
+		t.Errorf("new-feature should be based on develop, last commit: %s", out)
+	}
+}
+
+// --- Completion command tests ---
+
+// WT-046: The system shall provide a `wt completion <shell>` command.
+func TestCompletion_Bash(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	stdout, _, err := runWt(t, dir, "completion", "bash")
+	if err != nil {
+		t.Fatalf("wt completion bash failed: %v", err)
+	}
+	if len(stdout) == 0 {
+		t.Error("completion bash should produce output")
+	}
+	// Bash completion v2 should reference the binary name
+	if !strings.Contains(stdout, "wt") {
+		t.Error("bash completion should reference 'wt'")
+	}
+}
+
+func TestCompletion_Zsh(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	stdout, _, err := runWt(t, dir, "completion", "zsh")
+	if err != nil {
+		t.Fatalf("wt completion zsh failed: %v", err)
+	}
+	if len(stdout) == 0 {
+		t.Error("completion zsh should produce output")
+	}
+}
+
+func TestCompletion_Fish(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	stdout, _, err := runWt(t, dir, "completion", "fish")
+	if err != nil {
+		t.Fatalf("wt completion fish failed: %v", err)
+	}
+	if len(stdout) == 0 {
+		t.Error("completion fish should produce output")
+	}
+}
+
+// WT-047: If the user invokes `wt completion` with an unsupported shell,
+// the system shall display an error listing the supported shells.
+func TestCompletion_UnsupportedShell(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	_, stderr, err := runWt(t, dir, "completion", "powershell")
+	if err == nil {
+		t.Fatal("wt completion powershell should fail")
+	}
+	if !strings.Contains(stderr, "unsupported") {
+		t.Errorf("stderr should mention 'unsupported', got: %s", stderr)
+	}
+	// Should list supported shells
+	if !strings.Contains(stderr, "bash") || !strings.Contains(stderr, "zsh") || !strings.Contains(stderr, "fish") {
+		t.Errorf("stderr should list supported shells, got: %s", stderr)
+	}
+}
+
+// --- Tab completion tests ---
+
+// WT-043: Tab completion for create suggests branches excluding those with worktrees.
+func TestCompletion_CreateSuggestsBranches(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create some branches
+	gitRun(t, dir, "branch", "feature-a")
+	gitRun(t, dir, "branch", "feature-b")
+
+	// Create a worktree for feature-a
+	runWt(t, dir, "create", "feature-a")
+
+	// Use Cobra's __complete hidden command for testing completions
+	stdout, _, err := runWt(t, dir, "__complete", "create", "")
+	if err != nil {
+		// __complete may return exit code 1 with valid output
+		// Check stdout regardless
+	}
+	_ = err
+
+	// feature-b should be suggested (no worktree)
+	if !strings.Contains(stdout, "feature-b") {
+		t.Errorf("completion should suggest 'feature-b', got: %s", stdout)
+	}
+	// feature-a should NOT be suggested (has worktree)
+	// Note: main is the worktree for the main repo, should also be excluded
+	lines := strings.Split(stdout, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "feature-a" || strings.HasPrefix(trimmed, "feature-a\t") {
+			t.Errorf("completion should NOT suggest 'feature-a' (has worktree), got line: %s", line)
+		}
+	}
+}
+
+// WT-044: Tab completion for switch suggests existing worktree branch names.
+func TestCompletion_SwitchSuggestsWorktrees(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	runWt(t, dir, "create", "wt-alpha")
+	runWt(t, dir, "create", "wt-beta")
+
+	stdout, _, _ := runWt(t, dir, "__complete", "switch", "")
+
+	if !strings.Contains(stdout, "wt-alpha") {
+		t.Errorf("completion should suggest 'wt-alpha', got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "wt-beta") {
+		t.Errorf("completion should suggest 'wt-beta', got: %s", stdout)
+	}
+}
+
+// WT-045: Tab completion for remove suggests existing linked worktree branch names.
+func TestCompletion_RemoveSuggestsLinkedWorktrees(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	runWt(t, dir, "create", "rm-target")
+
+	stdout, _, _ := runWt(t, dir, "__complete", "remove", "")
+
+	if !strings.Contains(stdout, "rm-target") {
+		t.Errorf("completion should suggest 'rm-target', got: %s", stdout)
+	}
+	// main should NOT be suggested
+	lines := strings.Split(stdout, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "main" || strings.HasPrefix(trimmed, "main\t") {
+			t.Errorf("completion should NOT suggest 'main' (not a linked worktree), got line: %s", line)
+		}
+	}
+}
+
+// --- Switch with sanitized name ---
+
+// Test that switch works with sanitized directory name for slash branches.
+func TestSwitch_SanitizedName(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create a worktree for a branch with slash
+	runWt(t, dir, "create", "fix/switch-test")
+
+	// Switch using the original branch name
+	stdout, _, err := runWt(t, dir, "switch", "fix/switch-test")
+	if err != nil {
+		t.Fatalf("wt switch fix/switch-test failed: %v", err)
+	}
+	if !strings.Contains(stdout, "__wt_cd:") {
+		t.Errorf("stdout should contain __wt_cd:, got: %q", stdout)
 	}
 }

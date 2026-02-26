@@ -1,9 +1,9 @@
 = Design: Worktree Management
-:version: 1.0.1
+:version: 2.0.1
 :status: Current
-:source-stories-version: 1.0.0
-:source-spec-version: 1.0.0
-:last-updated: 2026-02-24
+:source-stories-version: 1.1.0
+:source-spec-version: 1.1.0
+:last-updated: 2026-02-26
 :feature: worktree-management
 :toc:
 
@@ -15,13 +15,14 @@ The tool is invoked from the terminal. It shells out to `git` for all worktree a
 
 == Decisions and Constraints
 
-No ADRs exist yet. Key technology decisions:
+Technology decisions are recorded as ADRs:
 
-* **Language:** Go -- produces a single static binary, good TUI library ecosystem.
-* **CLI framework:** `cobra` -- standard Go CLI framework, supports subcommands and flags.
-* **TUI selector:** `bubbletea` + `bubbles` (Charm libraries) -- provides fuzzy filtering and interactive selection without external dependencies like `fzf`.
-* **Git interaction:** Shell out to `git` via `os/exec` -- avoids git library dependency, ensures compatibility with user's git version.
+* <<../../adrs/0001-use-go.adoc#,ADR-0001>>: **Language** -- Go, single static binary, good TUI library ecosystem.
+* <<../../adrs/0002-use-cobra-for-cli.adoc#,ADR-0002>>: **CLI framework** -- Cobra, standard Go CLI framework with subcommands, flags, and built-in shell completion generation.
+* <<../../adrs/0003-use-bubbletea-for-tui.adoc#,ADR-0003>>: **TUI selector** -- Bubbletea + Bubbles (Charm libraries), interactive selection without external dependencies like `fzf`.
+* <<../../adrs/0004-shell-out-to-git.adoc#,ADR-0004>>: **Git interaction** -- Shell out to `git` via `os/exec`, avoids git library dependency.
 * **Shell integration pattern:** The binary outputs a path prefixed with `__wt_cd:` on stdout. A thin shell function (sourced in the user's shell config) reads this sentinel, strips the prefix, and runs `cd`. All other output (errors, lists, status) goes to stderr so it is never misinterpreted as a cd instruction.
+* **Fuzzy scoring** -- Custom implementation (no external dependency). A greedy forward-scan scoring algorithm with contextual bonuses (first-char, separator boundary, camelCase boundary, adjacency) and gap penalties. This avoids adding a new dependency for a small, self-contained algorithm.
 
 == System Design
 
@@ -33,15 +34,17 @@ flowchart TD
     CLI["CLI Entry Point<br/>(cobra root command)"]
 
     CLI --> SEL["wt (no args)<br/>→ Interactive Selector"]
-    CLI --> CREATE["wt create <branch>"]
+    CLI --> CREATE["wt create [branch]<br/>--base --local --remote"]
     CLI --> REMOVE["wt remove [name]"]
     CLI --> LIST["wt list"]
     CLI --> SWITCH["wt switch <name>"]
     CLI --> STATUS["wt status"]
     CLI --> INIT["wt init <shell>"]
+    CLI --> COMP["wt completion <shell>"]
 
     SEL --> TUI["TUI Module<br/>(bubbletea)"]
     REMOVE -->|no args| TUI
+    CREATE -->|no args| TUI
 
     SEL --> REPO["Repository Module"]
     CREATE --> REPO
@@ -50,7 +53,11 @@ flowchart TD
     SWITCH --> REPO
     STATUS --> REPO
 
+    CREATE --> NAMES["Names Module<br/>(branch sanitization)"]
+
     REPO --> GIT["Git Module<br/>(os/exec → git)"]
+
+    TUI --> FUZZY["Fuzzy Module<br/>(scored matching)"]
 
     SEL -->|selection| OUTPUT["Output Module<br/>(cd sentinel to stdout)"]
     SWITCH --> OUTPUT
@@ -59,15 +66,16 @@ flowchart TD
 
 === Module: `cmd/` -- Command Layer (Cobra)
 
-Responsibility: Parse CLI arguments and flags, delegate to core modules, format output.
+Responsibility: Parse CLI arguments and flags, delegate to core modules, format output. Commands that accept branch/worktree name arguments provide `ValidArgsFunction` callbacks for shell tab-completion.
 
-* `root.go` -- Root command. When invoked with no subcommand, runs the interactive selector.
-* `create.go` -- `wt create <branch>` subcommand.
-* `remove.go` -- `wt remove [name] [--force]` subcommand.
+* `root.go` -- Root command. When invoked with no subcommand, runs the interactive worktree selector.
+* `create.go` -- `wt create [branch] [--base <ref>] [--local] [--remote]` subcommand. With a branch argument, creates directly. Without arguments, launches the interactive branch selector. `--base` specifies a starting point for new branches. `--local` / `--remote` filter the interactive branch list. Provides `ValidArgsFunction` that suggests local + remote branches, excluding branches that already have worktrees.
+* `remove.go` -- `wt remove [name] [--force]` subcommand. Provides `ValidArgsFunction` that suggests linked worktree branch names.
 * `list.go` -- `wt list` subcommand.
-* `switch.go` -- `wt switch <name>` subcommand.
+* `switch.go` -- `wt switch <name>` subcommand. Provides `ValidArgsFunction` that suggests existing worktree branch names.
 * `status.go` -- `wt status` subcommand.
 * `init.go` -- `wt init <shell>` subcommand.
+* `completion.go` -- `wt completion <shell>` subcommand. Outputs shell-specific completion scripts using Cobra's built-in `GenBashCompletionV2()`, `GenZshCompletion()`, `GenFishCompletion()`. Supports `bash`, `zsh`, and `fish`.
 
 === Module: `internal/repo` -- Repository Resolution
 
@@ -88,27 +96,84 @@ Responsibility: Execute git commands and parse their output.
 Functions:
 
 * `ListWorktrees()` -- runs `git worktree list --porcelain`, parses output into structured worktree records (path, branch, HEAD commit, bare flag).
-* `AddWorktree(path, branch string, createBranch bool)` -- runs `git worktree add`.
+* `AddWorktree(path, branch string, createBranch bool, base string)` -- runs `git worktree add`. When `createBranch` is true and `base` is non-empty, the command becomes `git worktree add -b <branch> <path> <base>`, creating the branch from the specified base reference instead of HEAD.
 * `RemoveWorktree(path string, force bool)` -- runs `git worktree remove [--force]`.
 * `IsDirty(path string)` -- runs `git -C <path> status --porcelain` and checks for output.
 * `AheadBehind(path string)` -- runs `git -C <path> rev-list --left-right --count HEAD...@{upstream}` to get ahead/behind counts.
 * `BranchExists(name string)` -- checks local and remote branches.
+* `ListLocalBranches()` -- runs `git branch --format='%(refname:short)'`, returns sorted list of local branch names.
+* `ListRemoteBranches()` -- runs `git branch -r --format='%(refname:short)'`, strips the remote prefix (e.g., `origin/`), deduplicates across remotes, and returns sorted branch names. Excludes `HEAD` pointer entries.
 
 NOTE: Main worktree path determination lives in `internal/repo.Resolve()` rather than in this module, avoiding circular dependency between repo resolution and git operations.
 
 All functions return structured Go types, never raw strings. Errors from git are wrapped with context.
 
-=== Module: `internal/tui` -- Interactive Selector
+=== Module: `internal/tui` -- Interactive Selectors
 
-Responsibility: Display a fuzzy-search list of worktrees using bubbletea.
+Responsibility: Display interactive fuzzy-search lists using bubbletea.
 
-The TUI model:
+==== Worktree Selector (`selector.go`)
 
-* Receives a list of worktree entries (branch name, path, main indicator).
+The existing worktree selector:
+
+* Receives a list of worktree entries (branch name, path, relative path).
 * Renders a filterable list with fuzzy matching on branch name.
 * Returns the selected worktree's path, or empty string if cancelled (Escape/Ctrl-C).
+* Reused by the root command (WT-001) and `wt remove` with no args (WT-013).
 
-The selector is reused by both the root command (WT-001) and `wt remove` with no args (WT-013).
+==== Branch Selector (`branch_selector.go`)
+
+A new selector for choosing branches during interactive `wt create`:
+
+* `BranchEntry` struct: `{ Name string, Source string, HasWorktree bool }` -- where `Source` is `"local"` or `"remote"`, and `HasWorktree` indicates the branch already has a worktree.
+* `SelectBranch(entries []BranchEntry, header string) (string, error)` -- displays the branch list with the given header (e.g., `"Branches"` for branch selection, `"Base branch"` for base selection). The header parameter allows reusing the same selector for both contexts in the interactive create flow.
+* Branches with `HasWorktree == true` are rendered dimmed with a `[worktree]` marker and are not selectable (Enter is a no-op when the cursor is on a disabled entry).
+* Returns the selected branch name, or empty string if cancelled.
+
+==== Fuzzy Matching and Scoring
+
+Both selectors use scored fuzzy matching from `internal/fuzzy` (see below). When a filter pattern is entered:
+
+1. All entries are scored against the pattern via `fuzzy.Score()`.
+2. Entries that do not match (score < 0) are excluded.
+3. Remaining entries are sorted by descending score.
+4. Matched character positions are used to highlight matching characters in the rendered output using a distinct style (e.g., bold or a highlight color via lipgloss).
+
+When no filter text is entered, all entries are displayed in their original order without scoring.
+
+=== Module: `internal/fuzzy` -- Fuzzy Scoring
+
+Responsibility: Provide fzf-style scored fuzzy matching with character position tracking.
+
+This is a custom implementation (no external dependency). The algorithm is a greedy forward scan with contextual bonuses, inspired by the Sublime Text fuzzy match approach.
+
+**Public API:**
+
+* `Score(str, pattern string) Match` -- scores `str` against `pattern`. Returns a `Match` with the score and matched character positions.
+* `Match` struct: `{ Score int, Matched bool, Positions []int }` -- `Score` is the quality rating (higher is better), `Matched` indicates whether the pattern matched at all, `Positions` are the indices of matched characters in `str` (for highlighting).
+
+**Scoring constants:**
+
+[source,go]
+----
+const (
+    bonusFirstChar    = 16  // pattern[0] matches str[0]
+    bonusCamelCase    = 16  // match at camelCase boundary (lowercase→uppercase)
+    bonusSeparator    = 16  // match after separator: - _ . /
+    bonusAdjacent     = 8   // consecutive matched characters
+    penaltyLeadingGap = -3  // per-character penalty for gap before first match
+    penaltyGap        = -1  // per-character penalty for gaps between matches
+)
+----
+
+**Algorithm:**
+
+1. Convert both `str` and `pattern` to lowercase for case-insensitive matching.
+2. Walk `str` left-to-right, advancing through `pattern` characters.
+3. At each match, apply bonuses based on the character's context (is it the first char? After a separator? A camelCase boundary? Adjacent to the previous match?).
+4. For each gap (unmatched characters between matches), apply the gap penalty. The leading gap (before first match) uses a steeper penalty.
+5. If all pattern characters are matched, return `{Score: total, Matched: true, Positions: [...]}`.
+6. If not all pattern characters match, return `{Score: 0, Matched: false, Positions: nil}`.
 
 === Module: `internal/shell` -- Shell Integration
 
@@ -151,6 +216,34 @@ function wt
 end
 ----
 
+=== Module: `internal/names` -- Branch Name Sanitization
+
+Responsibility: Convert branch names into safe, flat directory names.
+
+**Public API:**
+
+* `Sanitize(branch string) string` -- transforms a branch name into a filesystem-safe directory name.
+
+**Algorithm:**
+
+1. Replace every character not matching `[a-zA-Z0-9-.]` with `-`.
+2. Collapse consecutive `-` characters into a single `-`.
+3. Trim leading and trailing `-` characters.
+
+**Examples:**
+
+[cols="1,1", options="header"]
+|===
+| Branch Name | Sanitized Directory Name
+| `feature-x` | `feature-x`
+| `fix/bug-123` | `fix-bug-123`
+| `feature//double` | `feature-double`
+| `/leading-slash` | `leading-slash`
+| `release/v2.0` | `release-v2.0`
+|===
+
+The original branch name is always preserved for git operations. `names.Sanitize()` is called only when computing the worktree directory path.
+
 === Output Convention
 
 Commands that trigger a directory change write to **stdout** with the `__wt_cd:` sentinel:
@@ -162,6 +255,7 @@ Commands that trigger a directory change write to **stdout** with the `__wt_cd:`
 Commands that output evaluable code to **stdout** (for shell eval):
 
 * `wt init <shell>` → stdout: shell function code
+* `wt completion <shell>` → stdout: shell completion script
 
 Commands that display information write to **stderr**:
 
@@ -178,7 +272,10 @@ Given a main repository at `/home/user/projects/myrepo`:
 
 * Worktrees directory: `/home/user/projects/myrepo-worktrees/`
 * Worktree for branch `feature-x`: `/home/user/projects/myrepo-worktrees/feature-x/`
-* Worktree for branch `fix/bug-123`: `/home/user/projects/myrepo-worktrees/fix/bug-123/` (preserves branch path separators)
+* Worktree for branch `fix/bug-123`: `/home/user/projects/myrepo-worktrees/fix-bug-123/` (branch name sanitized via `names.Sanitize()`)
+* Worktree for branch `release/v2.0`: `/home/user/projects/myrepo-worktrees/release-v2.0/`
+
+All worktree directories are flat within the worktrees directory. Branch names containing `/` or other special characters are sanitized to produce safe directory names.
 
 [source,mermaid]
 ----
@@ -187,9 +284,13 @@ flowchart LR
     PARENT --> MAIN["myrepo/<br/>(main worktree)"]
     PARENT --> WTD["myrepo-worktrees/"]
     WTD --> WT1["feature-x/"]
-    WTD --> WT2["fix/bug-123/"]
-    WTD --> WT3["release/v2/"]
+    WTD --> WT2["fix-bug-123/<br/>(branch: fix/bug-123)"]
+    WTD --> WT3["release-v2.0/<br/>(branch: release/v2.0)"]
 ----
+
+==== Orphan Directory Cleanup
+
+When a worktree is removed, if any legacy worktrees had been created before sanitization was introduced (e.g., `fix/bug-123/` as nested directories), the removal may leave empty parent directories. After `git worktree remove`, the remove command walks upward from the removed path toward the worktrees directory root and removes any empty directories it encounters.
 
 == Primary User Flow: Interactive Selection
 
@@ -224,6 +325,63 @@ sequenceDiagram
             TUI-->>WT: Empty selection
             WT-->>Shell: (no output)
         end
+    end
+----
+
+== User Flow: Interactive Worktree Creation
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant User
+    participant Shell as Shell Function
+    participant WT as wt binary
+    participant BranchTUI as Branch Selector
+    participant BaseTUI as Base Selector
+    participant Git as git
+
+    User->>Shell: wt create (no args)
+    Shell->>WT: command wt create
+    WT->>Git: git branch / git branch -r
+    Git-->>WT: Local + remote branches
+    WT->>Git: git worktree list --porcelain
+    Git-->>WT: Existing worktrees
+    WT->>WT: Build branch list, mark worktree'd branches
+
+    WT->>BranchTUI: Display branch selector
+    BranchTUI-->>User: Interactive fuzzy list
+
+    alt User selects existing branch
+        User->>BranchTUI: Select branch
+        BranchTUI-->>WT: Selected branch name
+        WT->>WT: Sanitize branch → directory name
+        WT->>Git: git worktree add <path> <branch>
+        WT-->>Shell: (stdout) __wt_cd:<path>
+        Shell->>Shell: cd <path>
+
+    else User selects new branch (not in list)
+        User->>BranchTUI: Select new branch name
+        BranchTUI-->>WT: New branch name
+        WT->>BaseTUI: Display base branch selector
+        BaseTUI-->>User: Interactive list of branches
+
+        alt User selects base
+            User->>BaseTUI: Select base branch
+            BaseTUI-->>WT: Base branch name
+            WT->>WT: Sanitize branch → directory name
+            WT->>Git: git worktree add -b <branch> <path> <base>
+            WT-->>Shell: (stdout) __wt_cd:<path>
+            Shell->>Shell: cd <path>
+        else User cancels base selector
+            User->>BaseTUI: Escape
+            BaseTUI-->>WT: Empty
+            WT-->>Shell: (no output)
+        end
+
+    else User cancels branch selector
+        User->>BranchTUI: Escape
+        BranchTUI-->>WT: Empty
+        WT-->>Shell: (no output)
     end
 ----
 
@@ -293,36 +451,87 @@ Criteria::
 * Shell function wrapping binary → Shell functions capture stdout and eval cd (WT-026)
 * `wt init <shell>` outputs function → Template rendering for bash, zsh, fish (WT-027, WT-028)
 
+=== US-009: Safe Worktree Directory Names
+
+Components:: `internal/names`, `cmd/create.go`, `cmd/remove.go`, `cmd/switch.go`
+Criteria::
+* Sanitize branch names for directory paths → `names.Sanitize()` replaces non-`[a-zA-Z0-9-.]` with `-` (WT-029)
+* Collapse consecutive hyphens → `names.Sanitize()` collapses `--` to `-` (WT-030)
+* Trim leading/trailing hyphens → `names.Sanitize()` trims `-` from ends (WT-031)
+* Flat directory for branches with slashes → `create.go` calls `filepath.Join(worktreesDir, names.Sanitize(branch))` (WT-032)
+* Preserve original branch name for git → `git.AddWorktree()` receives the original branch name; only the directory path is sanitized (WT-033)
+* Remove empty parent directories → `remove.go` walks upward from removed path, removes empty dirs up to worktrees root (WT-034)
+
+=== US-010: Interactive Branch Selection for Worktree Creation
+
+Components:: `cmd/create.go`, `internal/tui/branch_selector.go`, `internal/git`, `internal/names`
+Criteria::
+* Interactive branch selector on no-arg create → When `args == 0`, `create.go` fetches branches via `git.ListLocalBranches()` and `git.ListRemoteBranches()`, builds `BranchEntry` list, calls `tui.SelectBranch()` (WT-035)
+* Dim/disable branches with worktrees → `BranchEntry.HasWorktree` is set by cross-referencing with `git.ListWorktrees()`. Branch selector renders these dimmed and skips them on Enter (WT-036)
+* `--local` flag filters to local branches → `create.go` skips `ListRemoteBranches()` when `--local` is set (WT-037)
+* `--remote` flag filters to remote branches → `create.go` skips `ListLocalBranches()` when `--remote` is set (WT-038)
+* Direct creation bypasses selector → When `len(args) == 1`, existing flow runs without TUI (WT-039)
+* `--base` flag on direct creation → `git.AddWorktree(path, branch, true, base)` passes the base ref to `git worktree add -b <branch> <path> <base>` (WT-040)
+* Base selector for new branches in interactive mode → After selecting a non-existing branch, `create.go` launches a second `tui.SelectBranch()` call (filtered to all branches as base options) (WT-041)
+* Cancel in either selector exits cleanly → Empty return from `SelectBranch()` causes `create.go` to return nil without creating anything (WT-042)
+
+=== US-011: Shell Completion for Branch Arguments
+
+Components:: `cmd/create.go`, `cmd/switch.go`, `cmd/remove.go`, `cmd/completion.go`, `internal/git`
+Criteria::
+* Tab completion for create → `ValidArgsFunction` on `createCmd` calls `git.ListLocalBranches()` + `git.ListRemoteBranches()`, filters out branches that have worktrees, returns with `cobra.ShellCompDirectiveNoFileComp` (WT-043)
+* Tab completion for switch → `ValidArgsFunction` on `switchCmd` calls `git.ListWorktrees()`, returns linked worktree branch names (WT-044)
+* Tab completion for remove → `ValidArgsFunction` on `removeCmd` calls `git.ListWorktrees()`, returns linked worktree branch names (WT-045)
+* Completion command → `cmd/completion.go` uses Cobra's built-in `rootCmd.GenBashCompletionV2()`, `GenZshCompletion()`, `GenFishCompletion()` to output scripts (WT-046)
+* Error on unsupported shell → `completion.go` validates the shell argument and returns an error listing supported shells (WT-047)
+
+=== US-012: Ranked Fuzzy Matching
+
+Components:: `internal/fuzzy`, `internal/tui/selector.go`, `internal/tui/branch_selector.go`
+Criteria::
+* Scored matching with bonuses → `fuzzy.Score()` rewards first-char, separator, camelCase, and adjacency matches; penalizes gaps (WT-048)
+* Sort by descending score → Both selectors sort `filtered` entries by `Match.Score` descending after scoring (WT-049)
+* Highlight matched characters → Selectors use `Match.Positions` to apply lipgloss highlight style to matched characters in the rendered branch name (WT-050)
+* No scoring when filter is empty → When `textInput.Value() == ""`, entries displayed in original order without calling `fuzzy.Score()` (WT-051)
+
 == Project Structure
 
 [source]
 ----
 wt/
-├── main.go                  # Entry point
+├── main.go                        # Entry point
 ├── go.mod
 ├── go.sum
 ├── cmd/
-│   ├── root.go              # Root command + interactive selector
-│   ├── create.go            # wt create
-│   ├── remove.go            # wt remove
-│   ├── list.go              # wt list
-│   ├── switch.go            # wt switch
-│   ├── status.go            # wt status
-│   └── init.go              # wt init
+│   ├── root.go                    # Root command + interactive worktree selector
+│   ├── create.go                  # wt create [branch] [--base/--local/--remote]
+│   ├── remove.go                  # wt remove [name] [--force]
+│   ├── list.go                    # wt list
+│   ├── switch.go                  # wt switch <name>
+│   ├── status.go                  # wt status
+│   ├── init.go                    # wt init <shell>
+│   ├── completion.go              # wt completion <shell>
+│   └── completions.go             # Shared ValidArgsFunction helpers
 ├── internal/
 │   ├── repo/
-│   │   └── repo.go          # Repository resolution
+│   │   └── repo.go                # Repository resolution
 │   ├── git/
-│   │   └── git.go           # Git operations
+│   │   └── git.go                 # Git operations + branch listing
+│   ├── names/
+│   │   └── names.go               # Branch name sanitization
+│   ├── fuzzy/
+│   │   └── fuzzy.go               # Scored fuzzy matching algorithm
 │   ├── tui/
-│   │   └── selector.go      # Bubbletea fuzzy selector
+│   │   ├── selector.go            # Worktree fuzzy selector
+│   │   └── branch_selector.go    # Branch fuzzy selector
 │   └── shell/
-│       └── shell.go         # Shell function templates
+│       └── shell.go               # Shell function templates
 ├── docs/
 │   └── features/
 │       └── worktree-management/
 │           ├── user-stories.adoc
 │           ├── spec.adoc
-│           └── design.adoc
+│           ├── design.adoc
+│           └── tasks.adoc
 └── AGENTS.md
 ----

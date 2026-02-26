@@ -1,7 +1,7 @@
 = Specification: Worktree Management
-:version: 1.0.0
-:source-stories-version: 1.0.0
-:last-updated: 2026-02-24
+:version: 1.1.0
+:source-stories-version: 1.1.0
+:last-updated: 2026-02-26
 :feature: worktree-management
 :prefix: WT
 :toc:
@@ -202,6 +202,167 @@ Type:: Ubiquitous
 Source:: US-008: Criterion 2
 Verification:: Run `wt init bash`, `wt init zsh`, and `wt init fish`. Confirm each produces valid shell-specific function code.
 
+== WT-029
+The system shall sanitize branch names when computing worktree directory paths by replacing characters not in `[a-zA-Z0-9-.]` with `-`.
+
+Type:: Ubiquitous
+Source:: US-009: Criterion 1
+Verification:: Run `wt create fix/bug-123`. Confirm the worktree directory is named `fix-bug-123`, not `fix/bug-123`.
+
+== WT-030
+The system shall collapse consecutive `-` characters into a single `-` in sanitized worktree directory names.
+
+Type:: Ubiquitous
+Source:: US-009: Criterion 2
+Verification:: Run `wt create fix//double`. Confirm the worktree directory is named `fix-double`, not `fix--double`.
+
+== WT-031
+The system shall trim leading and trailing `-` characters from sanitized worktree directory names.
+
+Type:: Ubiquitous
+Source:: US-009: Criterion 3
+Verification:: Run `wt create /leading-slash`. Confirm the directory name does not start with `-`.
+
+== WT-032
+When the user invokes `wt create fix/bug-123`, the system shall create the worktree directory as `fix-bug-123` within the worktrees directory.
+
+Type:: Event-driven
+Source:: US-009: Criterion 4
+Verification:: Run `wt create fix/bug-123`. Confirm a flat directory `fix-bug-123` exists in the worktrees directory and contains the checked-out branch.
+
+== WT-033
+The system shall preserve the original branch name for all git operations, using the sanitized name only for the worktree directory path.
+
+Type:: Ubiquitous
+Source:: US-009: Criterion 5
+Verification:: Run `wt create fix/bug-123`. Run `git branch`. Confirm the branch is named `fix/bug-123` (not `fix-bug-123`). Confirm `wt list` shows `fix/bug-123` as the branch name.
+
+== WT-034
+When a worktree is removed, if the removal leaves empty parent directories within the worktrees directory, then the system shall remove those empty parent directories.
+
+Type:: Event-driven
+Source:: US-009: Criterion 6
+Verification:: Create a worktree for a branch whose name previously caused nested directories (e.g., `fix/old`). Remove it with `wt remove`. Confirm no orphan `fix/` directory remains in the worktrees directory.
+
+== WT-035
+When the user invokes `wt create` with no arguments, the system shall display an interactive fuzzy-search selector listing all local and remote branches.
+
+Type:: Event-driven
+Source:: US-010: Criterion 1
+Verification:: Run `wt create` with no arguments in a repository with local and remote branches. Confirm an interactive selector appears listing branches from both sources.
+
+== WT-036
+The interactive branch selector shall show branches that already have a worktree in a dimmed style with a marker, and those branches shall not be selectable.
+
+Type:: Ubiquitous
+Source:: US-010: Criterion 2
+Verification:: Create a worktree for branch `main`. Run `wt create` with no arguments. Confirm `main` appears dimmed with a marker and cannot be selected.
+
+== WT-037
+When the user invokes `wt create` with the `--local` flag and no branch argument, the system shall list only local branches in the interactive selector.
+
+Type:: Event-driven
+Source:: US-010: Criterion 3
+Verification:: Run `wt create --local`. Confirm only local branches are listed, no remote-only branches appear.
+
+== WT-038
+When the user invokes `wt create` with the `--remote` flag and no branch argument, the system shall list only remote branches in the interactive selector.
+
+Type:: Event-driven
+Source:: US-010: Criterion 4
+Verification:: Run `wt create --remote`. Confirm only remote branches are listed, no local-only branches appear.
+
+== WT-039
+When the user invokes `wt create <branch>`, the system shall use the direct-branch creation flow without launching the interactive selector.
+
+Type:: Event-driven
+Source:: US-010: Criterion 5
+Verification:: Run `wt create feature-x`. Confirm the worktree is created immediately without displaying an interactive selector.
+
+== WT-040
+When the user invokes `wt create <branch> --base <ref>`, the system shall create a new branch starting from the specified base reference and create a worktree for it.
+
+Type:: Event-driven
+Source:: US-010: Criterion 6
+Verification:: Run `wt create new-feature --base main`. Confirm the branch `new-feature` is created from `main`'s HEAD and a worktree is created for it.
+
+== WT-041
+When the user selects a branch that does not already exist through the interactive create selector, the system shall display a second interactive selector for choosing the base branch.
+
+Type:: Event-driven
+Source:: US-010: Criterion 7
+Verification:: Run `wt create`, type a new branch name that matches no existing branch, select it. Confirm a second selector appears listing available branches as base options.
+
+== WT-042
+If the user cancels either the branch selector or the base branch selector during interactive creation, then the system shall exit without creating a worktree.
+
+Type:: Unwanted behavior
+Source:: US-010: Criterion 8
+Verification:: Run `wt create`, press Escape in the branch selector. Confirm no worktree is created. Repeat by cancelling in the base selector.
+
+== WT-043
+When the user presses Tab after `wt create`, the system shall suggest local and remote branch names, excluding branches that already have a worktree.
+
+Type:: Event-driven
+Source:: US-011: Criterion 1
+Verification:: Source the completion script. Type `wt create ` and press Tab. Confirm branch names are suggested, and branches with existing worktrees are excluded.
+
+== WT-044
+When the user presses Tab after `wt switch`, the system shall suggest existing worktree branch names.
+
+Type:: Event-driven
+Source:: US-011: Criterion 2
+Verification:: Source the completion script. Type `wt switch ` and press Tab. Confirm existing worktree branch names are suggested.
+
+== WT-045
+When the user presses Tab after `wt remove`, the system shall suggest existing linked worktree branch names.
+
+Type:: Event-driven
+Source:: US-011: Criterion 3
+Verification:: Source the completion script. Type `wt remove ` and press Tab. Confirm linked worktree branch names are suggested (main worktree excluded).
+
+== WT-046
+The system shall provide a `wt completion <shell>` command that outputs shell-specific completion scripts for Bash, Zsh, and Fish.
+
+Type:: Ubiquitous
+Source:: US-011: Criterion 4
+Verification:: Run `wt completion bash`, `wt completion zsh`, and `wt completion fish`. Confirm each produces a valid completion script for the respective shell.
+
+== WT-047
+If the user invokes `wt completion` with an unsupported shell name, then the system shall display an error listing the supported shells.
+
+Type:: Unwanted behavior
+Source:: US-011: Criterion 5
+Verification:: Run `wt completion powershell`. Confirm an error is displayed that lists bash, zsh, and fish as supported options.
+
+== WT-048
+The system shall score fuzzy matches using a ranking algorithm that rewards first-character matches, separator-boundary matches, camelCase-boundary matches, and adjacent character matches, and penalizes large gaps between matched characters.
+
+Type:: Ubiquitous
+Source:: US-012: Criterion 1, US-012: Criterion 2
+Verification:: In the interactive selector, type a pattern that matches multiple entries. Confirm the entry with the closest character-boundary alignment appears first (e.g., typing `sm` ranks `switch-main` above `some-random`).
+
+== WT-049
+The system shall sort filtered results in the interactive selector by descending match score so that the best matches appear at the top.
+
+Type:: Ubiquitous
+Source:: US-012: Criterion 3
+Verification:: In the interactive selector, type a partial pattern. Confirm results are ordered with the highest-quality match at the top.
+
+== WT-050
+The system shall highlight the matched characters in each result entry in the interactive selector.
+
+Type:: Ubiquitous
+Source:: US-012: Criterion 4
+Verification:: In the interactive selector, type a filter pattern. Confirm the characters that match the pattern are visually highlighted in each displayed entry.
+
+== WT-051
+When no filter text is entered in the interactive selector, the system shall display all entries in their original order without scoring.
+
+Type:: Event-driven
+Source:: US-012: Criterion 5
+Verification:: Open the interactive selector. Without typing any filter text, confirm all entries are displayed in their default order.
+
 == Traceability
 
 [cols="1,2,2", options="header"]
@@ -319,4 +480,96 @@ Verification:: Run `wt init bash`, `wt init zsh`, and `wt init fish`. Confirm ea
 | WT-028
 | Support Bash, Zsh, and Fish
 | US-008: Criterion 2
+
+| WT-029
+| Sanitize branch names for directory paths
+| US-009: Criterion 1
+
+| WT-030
+| Collapse consecutive hyphens in sanitized names
+| US-009: Criterion 2
+
+| WT-031
+| Trim leading/trailing hyphens from sanitized names
+| US-009: Criterion 3
+
+| WT-032
+| Create flat directory for branches with slashes
+| US-009: Criterion 4
+
+| WT-033
+| Preserve original branch name for git operations
+| US-009: Criterion 5
+
+| WT-034
+| Remove empty parent directories on worktree removal
+| US-009: Criterion 6
+
+| WT-035
+| Interactive branch selector on no-arg create
+| US-010: Criterion 1
+
+| WT-036
+| Dim and disable branches with existing worktrees
+| US-010: Criterion 2
+
+| WT-037
+| Filter to local branches with --local flag
+| US-010: Criterion 3
+
+| WT-038
+| Filter to remote branches with --remote flag
+| US-010: Criterion 4
+
+| WT-039
+| Direct creation bypasses interactive selector
+| US-010: Criterion 5
+
+| WT-040
+| Create branch from specified base reference
+| US-010: Criterion 6
+
+| WT-041
+| Base branch selector for new branches in interactive mode
+| US-010: Criterion 7
+
+| WT-042
+| Cancel in either selector exits without creating
+| US-010: Criterion 8
+
+| WT-043
+| Tab completion for create suggests branches
+| US-011: Criterion 1
+
+| WT-044
+| Tab completion for switch suggests worktrees
+| US-011: Criterion 2
+
+| WT-045
+| Tab completion for remove suggests linked worktrees
+| US-011: Criterion 3
+
+| WT-046
+| Completion command outputs shell scripts
+| US-011: Criterion 4
+
+| WT-047
+| Error on unsupported shell for completion
+| US-011: Criterion 5
+
+| WT-048
+| Scored fuzzy matching with boundary bonuses
+| US-012: Criterion 1, US-012: Criterion 2
+
+| WT-049
+| Sort results by descending match score
+| US-012: Criterion 3
+
+| WT-050
+| Highlight matched characters in selector
+| US-012: Criterion 4
+
+| WT-051
+| No scoring when filter is empty
+| US-012: Criterion 5
 |===

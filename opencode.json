@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "skill": {
+      "proven-needs": "allow",
+      "needs-adr": "allow",
+      "needs-architecture": "allow",
+      "needs-compliance": "allow",
+      "needs-dependencies": "allow",
+      "needs-design": "allow",
+      "needs-implementation": "allow",
+      "needs-security": "allow",
+      "needs-spec": "allow",
+      "needs-stories": "allow",
+      "needs-tasks": "allow",
+      "needs-tests": "allow",
+      "ears-requirements": "allow",
+      "conventional-commits": "allow"
+    }
+  }
+}

@@ -1,16 +1,16 @@
 = Implementation Tasks: Worktree Management
-:version: 1.0.0
+:version: 2.0.0
 :status: Implemented
-:source-design-version: 1.0.0
-:source-stories-version: 1.0.0
-:source-spec-version: 1.0.0
-:last-updated: 2026-02-24
+:source-design-version: 2.0.0
+:source-stories-version: 1.1.0
+:source-spec-version: 1.1.0
+:last-updated: 2026-02-26
 :feature: worktree-management
 :toc:
 
 == Overview
 
-Implements the `wt` CLI tool for git worktree management. 4 phases, 11 tasks.
+Implements the `wt` CLI tool for git worktree management. 7 phases, 19 tasks. Phases 1–4 (TASK-001 through TASK-011) are complete from the initial implementation. Phases 5–7 (TASK-012 through TASK-019) implement the new features: branch name sanitization, fuzzy scoring, interactive branch selection, and shell completion.
 
 == Phase 1: Foundation
 
@@ -105,6 +105,74 @@ Stories:: US-008
 Specs:: WT-026, WT-027, WT-028
 Description:: Accept shell name argument (bash, zsh, fish). Output the appropriate shell function to stdout. The function captures `wt` binary stdout and runs `cd` when the `__wt_cd:` sentinel is detected. Validate shell argument, error on unsupported shell.
 
+== Phase 5: Branch Name Sanitization and Fuzzy Scoring
+
+Implement the two new standalone modules that other features depend on.
+
+* [x] TASK-012: Implement branch name sanitization module [parallel]
++
+Components:: `internal/names/names.go`
+Stories:: US-009
+Specs:: WT-029, WT-030, WT-031
+Description:: Create `internal/names/names.go` with `Sanitize(branch string) string`. Replace characters not matching `[a-zA-Z0-9-.]` with `-`. Collapse consecutive `-` into single `-`. Trim leading and trailing `-`. Include unit tests in `internal/names/names_test.go` covering: `feature-x` -> `feature-x`, `fix/bug-123` -> `fix-bug-123`, `feature//double` -> `feature-double`, `/leading-slash` -> `leading-slash`, `release/v2.0` -> `release-v2.0`.
+
+* [x] TASK-013: Implement fuzzy scoring module [parallel]
++
+Components:: `internal/fuzzy/fuzzy.go`
+Stories:: US-012
+Specs:: WT-048, WT-049, WT-050, WT-051
+Description:: Create `internal/fuzzy/fuzzy.go` with `Score(str, pattern string) Match` function and `Match` struct (`Score int`, `Matched bool`, `Positions []int`). Implement greedy forward-scan algorithm with scoring constants: `bonusFirstChar=16`, `bonusCamelCase=16`, `bonusSeparator=16`, `bonusAdjacent=8`, `penaltyLeadingGap=-3`, `penaltyGap=-1`. Case-insensitive matching. Return `{Score: 0, Matched: false, Positions: nil}` for non-matches. Include unit tests in `internal/fuzzy/fuzzy_test.go` covering: exact match, prefix match, separator boundary, camelCase boundary, adjacent bonus, gap penalty, non-match, empty pattern, and sort-order verification.
+
+== Phase 6: Enhanced Create and TUI
+
+Integrate sanitization and scoring into commands and selectors. Add interactive branch creation.
+
+* [x] TASK-014: Integrate branch name sanitization into create, remove, and switch commands [sequential]
++
+Components:: `cmd/create.go`, `cmd/remove.go`, `cmd/switch.go`, `internal/names`
+Stories:: US-009
+Specs:: WT-032, WT-033, WT-034
+Description:: Update `create.go` to compute worktree directory path as `filepath.Join(worktreesDir, names.Sanitize(branch))` instead of using the branch name directly. Pass the original branch name to `git.AddWorktree()`. Update `remove.go` to walk upward from the removed worktree path toward the worktrees directory root and remove any empty parent directories after `git worktree remove`. Update `switch.go` to use sanitized names for path matching. Update `git.AddWorktree()` signature to accept a `base string` parameter (empty string means no base).
+
+* [x] TASK-015: Add branch listing functions to git module [parallel]
++
+Components:: `internal/git/git.go`
+Stories:: US-010, US-011
+Specs:: WT-035, WT-037, WT-038, WT-043
+Description:: Add `ListLocalBranches() ([]string, error)` -- runs `git branch --format='%(refname:short)'`, returns sorted list. Add `ListRemoteBranches() ([]string, error)` -- runs `git branch -r --format='%(refname:short)'`, strips remote prefix, deduplicates, excludes HEAD entries, returns sorted list.
+
+* [x] TASK-016: Integrate fuzzy scoring into existing worktree selector [parallel]
++
+Components:: `internal/tui/selector.go`, `internal/fuzzy`
+Stories:: US-012
+Specs:: WT-048, WT-049, WT-050, WT-051
+Description:: Replace the existing simple fuzzy matching in `selector.go` with `fuzzy.Score()`. When filter text is non-empty: score all entries, exclude non-matches, sort by descending score, highlight matched character positions using lipgloss. When filter text is empty: display all entries in original order without scoring.
+
+* [x] TASK-017: Implement interactive branch selector and wire into create command [sequential]
++
+Components:: `internal/tui/branch_selector.go`, `cmd/create.go`, `internal/git`, `internal/names`, `internal/fuzzy`
+Stories:: US-010
+Specs:: WT-035, WT-036, WT-037, WT-038, WT-039, WT-040, WT-041, WT-042
+Description:: Create `internal/tui/branch_selector.go` with `BranchEntry` struct (`Name string`, `Source string`, `HasWorktree bool`) and `SelectBranch(entries []BranchEntry) (string, error)`. Render dimmed entries with `[worktree]` marker for branches that have worktrees; make them non-selectable. Use `fuzzy.Score()` for filtering and ranking. Update `create.go`: when invoked with no args, fetch branches via `git.ListLocalBranches()` + `git.ListRemoteBranches()`, build `BranchEntry` list, cross-reference with existing worktrees, launch `SelectBranch()`. Add `--local` and `--remote` flags to filter the branch list. Add `--base` flag for direct creation. When a non-existing branch is selected, launch a second `SelectBranch()` for base branch selection. Empty selection from either selector returns without creating.
+
+== Phase 7: Shell Completion
+
+Add shell tab-completion support.
+
+* [x] TASK-018: Implement `wt completion` command [parallel]
++
+Components:: `cmd/completion.go`
+Stories:: US-011
+Specs:: WT-046, WT-047
+Description:: Create `cmd/completion.go` with a `completion` subcommand accepting a shell argument (`bash`, `zsh`, `fish`). Use Cobra's built-in `rootCmd.GenBashCompletionV2()`, `rootCmd.GenZshCompletion()`, `rootCmd.GenFishCompletion()` to output shell-specific completion scripts to stdout. Validate the shell argument; return an error listing supported shells for unsupported values.
+
+* [x] TASK-019: Add ValidArgsFunction to create, switch, and remove commands [parallel]
++
+Components:: `cmd/create.go`, `cmd/switch.go`, `cmd/remove.go`, `internal/git`
+Stories:: US-011
+Specs:: WT-043, WT-044, WT-045
+Description:: Add `ValidArgsFunction` to `createCmd`: call `git.ListLocalBranches()` + `git.ListRemoteBranches()`, filter out branches that already have worktrees, return with `cobra.ShellCompDirectiveNoFileComp`. Add `ValidArgsFunction` to `switchCmd`: call `git.ListWorktrees()`, return worktree branch names. Add `ValidArgsFunction` to `removeCmd`: call `git.ListWorktrees()`, return linked (non-main) worktree branch names.
+
 == Traceability
 
 [cols="1,2,2", options="header"]
@@ -142,4 +210,20 @@ Description:: Accept shell name argument (bash, zsh, fish). Output the appropria
 | US-008: Shell Integration
 | WT-026, WT-027, WT-028
 | TASK-011
+
+| US-009: Safe Worktree Directory Names
+| WT-029, WT-030, WT-031, WT-032, WT-033, WT-034
+| TASK-012, TASK-014
+
+| US-010: Interactive Branch Selection
+| WT-035, WT-036, WT-037, WT-038, WT-039, WT-040, WT-041, WT-042
+| TASK-015, TASK-017
+
+| US-011: Shell Completion
+| WT-043, WT-044, WT-045, WT-046, WT-047
+| TASK-015, TASK-018, TASK-019
+
+| US-012: Ranked Fuzzy Matching
+| WT-048, WT-049, WT-050, WT-051
+| TASK-013, TASK-016
 |===

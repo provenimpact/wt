@@ -1,6 +1,6 @@
 = User Stories: Worktree Management
-:version: 1.0.0
-:last-updated: 2026-02-24
+:version: 1.1.0
+:last-updated: 2026-02-26
 :feature: worktree-management
 :toc:
 
@@ -98,3 +98,59 @@ Acceptance Criteria:
 * [ ] The system shall support Bash, Zsh, and Fish shells.
 * [ ] When the user invokes `wt init <shell>`, the system shall output the shell function code for the specified shell.
 * [ ] The shell function shall execute the `wt` binary and evaluate its output to change directory when appropriate.
+
+== US-009: Safe Worktree Directory Names
+As a developer,
+I want the tool to handle branch names with special characters like `/` correctly when creating worktree directories,
+so that worktrees are always stored as flat directories and the tool does not break when I use branch naming conventions like `fix/bug-123`.
+
+Acceptance Criteria:
+
+* [ ] The system shall sanitize branch names when computing worktree directory paths by replacing characters not in `[a-zA-Z0-9-.]` with `-`.
+* [ ] The system shall collapse consecutive `-` characters into a single `-` in sanitized directory names.
+* [ ] The system shall trim leading and trailing `-` characters from sanitized directory names.
+* [ ] When the user invokes `wt create fix/bug-123`, the system shall create the worktree directory as `fix-bug-123` within the worktrees directory.
+* [ ] The system shall preserve the original branch name for all git operations, using the sanitized name only for the directory path.
+* [ ] When a worktree is removed, if the removal leaves empty parent directories within the worktrees directory, then the system shall remove those empty parent directories.
+
+== US-010: Interactive Branch Selection for Worktree Creation
+As a developer,
+I want to browse and fuzzy-search through available branches when creating a worktree without specifying the branch upfront,
+so that I can discover and select branches interactively, including creating new branches with a chosen base.
+
+Acceptance Criteria:
+
+* [ ] When the user invokes `wt create` with no arguments, the system shall display an interactive fuzzy-search selector listing all local and remote branches.
+* [ ] The system shall show branches that already have a worktree in a dimmed style with a marker, and those branches shall not be selectable.
+* [ ] When the user invokes `wt create` with the `--local` flag, the system shall list only local branches.
+* [ ] When the user invokes `wt create` with the `--remote` flag, the system shall list only remote branches.
+* [ ] When the user invokes `wt create <branch>`, the system shall use the existing direct-branch creation flow without launching the interactive selector.
+* [ ] When the user invokes `wt create <branch> --base <ref>`, the system shall create the new branch starting from the specified base reference.
+* [ ] When the user creates a new branch (one that does not already exist) through the interactive selector, the system shall display a second interactive selector for choosing the base branch.
+* [ ] If the user cancels either the branch selector or the base selector, then the system shall exit without creating a worktree.
+
+== US-011: Shell Completion for Branch Arguments
+As a developer,
+I want tab-completion for branch and worktree names when typing commands,
+so that I can use the CLI efficiently without having to type or remember full names.
+
+Acceptance Criteria:
+
+* [ ] When the user presses Tab after `wt create`, the system shall suggest local and remote branch names, excluding branches that already have a worktree.
+* [ ] When the user presses Tab after `wt switch`, the system shall suggest existing worktree branch names.
+* [ ] When the user presses Tab after `wt remove`, the system shall suggest existing linked worktree branch names.
+* [ ] The system shall provide a `wt completion <shell>` command that outputs shell-specific completion scripts for Bash, Zsh, and Fish.
+* [ ] If the user invokes `wt completion` with an unsupported shell, then the system shall display an error listing the supported shells.
+
+== US-012: Ranked Fuzzy Matching
+As a developer,
+I want the fuzzy-search selector to rank results by match quality similar to fzf,
+so that the most relevant matches appear first when I type a filter pattern.
+
+Acceptance Criteria:
+
+* [ ] The system shall score fuzzy matches using a ranking algorithm that rewards first-character matches, separator-boundary matches, camelCase-boundary matches, and adjacent character matches.
+* [ ] The system shall penalize matches with large gaps between matched characters.
+* [ ] The system shall sort filtered results by descending match score so that the best matches appear at the top.
+* [ ] The system shall highlight the matched characters in each result entry in the interactive selector.
+* [ ] When no filter text is entered, the system shall display all entries in their original order without scoring.

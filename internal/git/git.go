@@ -3,6 +3,7 @@ package git
 import (
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -59,11 +60,16 @@ func ListWorktrees() ([]Worktree, error) {
 }
 
 // AddWorktree creates a new worktree at the given path for the given branch.
-// If createBranch is true, a new branch is created.
-func AddWorktree(path, branch string, createBranch bool) error {
+// If createBranch is true, a new branch is created. When createBranch is true
+// and base is non-empty, the new branch starts from the specified base reference
+// instead of HEAD.
+func AddWorktree(path, branch string, createBranch bool, base string) error {
 	args := []string{"worktree", "add"}
 	if createBranch {
 		args = append(args, "-b", branch, path)
+		if base != "" {
+			args = append(args, base)
+		}
 	} else {
 		args = append(args, path, branch)
 	}
@@ -133,6 +139,58 @@ func BranchExists(name string) (bool, error) {
 		return false, fmt.Errorf("checking remote branches: %w", err)
 	}
 	return strings.TrimSpace(out) != "", nil
+}
+
+// ListLocalBranches returns sorted local branch names.
+func ListLocalBranches() ([]string, error) {
+	out, err := gitOutput("branch", "--format=%(refname:short)")
+	if err != nil {
+		return nil, fmt.Errorf("listing local branches: %w", err)
+	}
+	return parseLines(out), nil
+}
+
+// ListRemoteBranches returns sorted remote branch names with the remote prefix stripped.
+// Deduplicates across remotes and excludes HEAD pointer entries.
+func ListRemoteBranches() ([]string, error) {
+	out, err := gitOutput("branch", "-r", "--format=%(refname:short)")
+	if err != nil {
+		return nil, fmt.Errorf("listing remote branches: %w", err)
+	}
+
+	seen := make(map[string]bool)
+	var branches []string
+	for _, line := range parseLines(out) {
+		// Skip HEAD pointer entries like "origin/HEAD"
+		if strings.HasSuffix(line, "/HEAD") {
+			continue
+		}
+		// Strip remote prefix: "origin/feature-x" -> "feature-x"
+		parts := strings.SplitN(line, "/", 2)
+		name := line
+		if len(parts) == 2 {
+			name = parts[1]
+		}
+		if !seen[name] {
+			seen[name] = true
+			branches = append(branches, name)
+		}
+	}
+
+	sort.Strings(branches)
+	return branches, nil
+}
+
+func parseLines(s string) []string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	sort.Strings(lines)
+	return lines
 }
 
 func gitOutput(args ...string) (string, error) {

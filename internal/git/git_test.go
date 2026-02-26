@@ -1,11 +1,12 @@
 // Feature: worktree-management
-// Spec version: 1.0.0
+// Spec version: 1.1.0
 // Generated from: spec.adoc
 //
 // Spec coverage:
 //   WT-006, WT-007, WT-008, WT-009, WT-010: worktree creation
 //   WT-012, WT-014, WT-015: worktree removal
 //   WT-022, WT-023: dirty/clean detection and ahead/behind
+//   WT-035, WT-037, WT-038: branch listing functions
 
 package git
 
@@ -77,7 +78,7 @@ func TestAddWorktree_NewBranch(t *testing.T) {
 	setupTestRepo(t)
 
 	wtPath := filepath.Join(t.TempDir(), "feature-x")
-	err := AddWorktree(wtPath, "feature-x", true)
+	err := AddWorktree(wtPath, "feature-x", true, "")
 	if err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestAddWorktree_ExistingBranch(t *testing.T) {
 	}
 
 	wtPath := filepath.Join(t.TempDir(), "existing-branch")
-	err := AddWorktree(wtPath, "existing-branch", false)
+	err := AddWorktree(wtPath, "existing-branch", false, "")
 	if err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestRemoveWorktree(t *testing.T) {
 	setupTestRepo(t)
 
 	wtPath := filepath.Join(t.TempDir(), "to-remove")
-	if err := AddWorktree(wtPath, "to-remove", true); err != nil {
+	if err := AddWorktree(wtPath, "to-remove", true, ""); err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
 
@@ -240,7 +241,7 @@ func TestRemoveWorktree_ForceWithDirtyState(t *testing.T) {
 	setupTestRepo(t)
 
 	wtPath := filepath.Join(t.TempDir(), "dirty-wt")
-	if err := AddWorktree(wtPath, "dirty-wt", true); err != nil {
+	if err := AddWorktree(wtPath, "dirty-wt", true, ""); err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
 
@@ -256,5 +257,92 @@ func TestRemoveWorktree_ForceWithDirtyState(t *testing.T) {
 	err := RemoveWorktree(wtPath, true)
 	if err != nil {
 		t.Fatalf("RemoveWorktree(force=true) error: %v", err)
+	}
+}
+
+// WT-035, WT-037: ListLocalBranches returns sorted local branch names.
+func TestListLocalBranches(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create some branches
+	cmd := exec.Command("git", "branch", "beta")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+	cmd = exec.Command("git", "branch", "alpha")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	branches, err := ListLocalBranches()
+	if err != nil {
+		t.Fatalf("ListLocalBranches() error: %v", err)
+	}
+
+	// Should include main, alpha, beta
+	if len(branches) < 3 {
+		t.Fatalf("expected at least 3 branches, got %d: %v", len(branches), branches)
+	}
+
+	// Should be sorted
+	found := map[string]bool{}
+	for _, b := range branches {
+		found[b] = true
+	}
+	if !found["main"] {
+		t.Error("ListLocalBranches() should include 'main'")
+	}
+	if !found["alpha"] {
+		t.Error("ListLocalBranches() should include 'alpha'")
+	}
+	if !found["beta"] {
+		t.Error("ListLocalBranches() should include 'beta'")
+	}
+
+	// Verify sorted order
+	for i := 1; i < len(branches); i++ {
+		if branches[i] < branches[i-1] {
+			t.Errorf("branches not sorted: %v", branches)
+			break
+		}
+	}
+}
+
+// AddWorktree with base parameter creates branch from specified ref.
+func TestAddWorktree_WithBase(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create a commit on a different branch
+	cmd := exec.Command("git", "checkout", "-b", "base-branch")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test",
+		"GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test",
+		"GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	cmd.CombinedOutput()
+	cmd = exec.Command("git", "commit", "--allow-empty", "-m", "base commit")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test",
+		"GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test",
+		"GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	cmd.CombinedOutput()
+	cmd = exec.Command("git", "checkout", "main")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	wtPath := filepath.Join(t.TempDir(), "based-wt")
+	err := AddWorktree(wtPath, "new-from-base", true, "base-branch")
+	if err != nil {
+		t.Fatalf("AddWorktree with base error: %v", err)
+	}
+
+	// Verify the worktree has the base commit
+	cmd = exec.Command("git", "-C", wtPath, "log", "--oneline", "-1")
+	out, _ := cmd.Output()
+	if !strings.Contains(string(out), "base commit") {
+		t.Errorf("worktree should be based on base-branch, last commit: %s", out)
 	}
 }

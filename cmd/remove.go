@@ -19,6 +19,12 @@ var removeCmd = &cobra.Command{
 	Long:  "Remove a git worktree. If no name is given, an interactive selector is shown.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runRemove,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeLinkedWorktreeBranches(), cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 func init() {
@@ -110,6 +116,22 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Clean up empty parent directories between the removed path and worktrees dir
+	cleanEmptyParents(targetPath, info.WorktreesDir)
+
 	fmt.Fprintf(os.Stderr, "Removed worktree %q\n", targetBranch)
 	return nil
+}
+
+// cleanEmptyParents walks upward from path toward stopAt, removing empty directories.
+func cleanEmptyParents(path, stopAt string) {
+	dir := filepath.Dir(path)
+	for dir != stopAt && len(dir) > len(stopAt) {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			break
+		}
+		os.Remove(dir)
+		dir = filepath.Dir(dir)
+	}
 }

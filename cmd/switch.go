@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/provenimpact/wt/internal/git"
+	"github.com/provenimpact/wt/internal/names"
 	"github.com/provenimpact/wt/internal/repo"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +17,12 @@ var switchCmd = &cobra.Command{
 	Long:  "Switch to a specific worktree by branch name.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSwitch,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeWorktreeBranches(), cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 func init() {
@@ -35,8 +42,9 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	sanitized := names.Sanitize(name)
 	for _, wt := range worktrees {
-		if wt.Branch == name || filepath.Base(wt.Path) == name {
+		if wt.Branch == name || filepath.Base(wt.Path) == name || filepath.Base(wt.Path) == sanitized {
 			fmt.Printf("__wt_cd:%s", wt.Path)
 			return nil
 		}
