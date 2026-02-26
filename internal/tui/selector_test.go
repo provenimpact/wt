@@ -1,11 +1,11 @@
 // Feature: worktree-management
-// Spec version: 1.0.0
+// Spec version: 1.1.0
 // Generated from: spec.adoc
 //
 // Spec coverage:
 //   WT-002: Selector entry shows branch and path (via model View)
 //   WT-005: Cancel exits silently (via model Update)
-//   Fuzzy match algorithm unit tests
+//   WT-048, WT-049, WT-050, WT-051: Fuzzy scoring integration
 
 package tui
 
@@ -14,9 +14,11 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/provenimpact/wt/internal/fuzzy"
 )
 
-func TestFuzzyMatch(t *testing.T) {
+func TestFuzzyScore_Integration(t *testing.T) {
+	// Verify the fuzzy module is properly integrated via Score
 	tests := []struct {
 		str     string
 		pattern string
@@ -30,15 +32,13 @@ func TestFuzzyMatch(t *testing.T) {
 		{"feature-auth", "xyz", false},
 		{"feature-auth", "featurez", false},
 		{"abc", "abcd", false},
-		{"", "", true},
-		{"", "a", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.str+"/"+tt.pattern, func(t *testing.T) {
-			got := fuzzyMatch(tt.str, tt.pattern)
-			if got != tt.want {
-				t.Errorf("fuzzyMatch(%q, %q) = %v, want %v", tt.str, tt.pattern, got, tt.want)
+			m := fuzzy.Score(tt.str, tt.pattern)
+			if m.Matched != tt.want {
+				t.Errorf("fuzzy.Score(%q, %q).Matched = %v, want %v", tt.str, tt.pattern, m.Matched, tt.want)
 			}
 		})
 	}

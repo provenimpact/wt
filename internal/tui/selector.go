@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/provenimpact/wt/internal/fuzzy"
 )
 
 // Entry represents a worktree entry in the selector.
@@ -14,6 +16,12 @@ type Entry struct {
 	Branch string
 	Path   string
 	Rel    string
+}
+
+// filteredEntry holds an Entry along with its fuzzy match result for rendering.
+type filteredEntry struct {
+	Entry
+	match fuzzy.Match
 }
 
 // Select displays an interactive fuzzy selector and returns the selected worktree path.
@@ -38,16 +46,17 @@ func Select(entries []Entry) (string, error) {
 
 type model struct {
 	entries   []Entry
-	filtered  []Entry
+	filtered  []filteredEntry
 	textInput textinput.Model
 	selected  int
 	cancelled bool
 }
 
 var (
-	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	promptStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	selectedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	promptStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	highlightStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 )
 
 func newModel(entries []Entry) model {
@@ -59,9 +68,15 @@ func newModel(entries []Entry) model {
 	ti.PromptStyle = promptStyle
 	ti.Prompt = "  "
 
+	// Build initial filtered list with no scoring
+	filtered := make([]filteredEntry, len(entries))
+	for i, e := range entries {
+		filtered[i] = filteredEntry{Entry: e}
+	}
+
 	return model{
 		entries:   entries,
-		filtered:  entries,
+		filtered:  filtered,
 		textInput: ti,
 		selected:  0,
 	}
@@ -96,17 +111,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 
-	// Filter entries
-	query := strings.ToLower(m.textInput.Value())
+	// Filter and score entries
+	query := m.textInput.Value()
 	if query == "" {
-		m.filtered = m.entries
+		m.filtered = make([]filteredEntry, len(m.entries))
+		for i, e := range m.entries {
+			m.filtered[i] = filteredEntry{Entry: e}
+		}
 	} else {
 		m.filtered = nil
 		for _, e := range m.entries {
-			if fuzzyMatch(strings.ToLower(e.Branch), query) {
-				m.filtered = append(m.filtered, e)
+			match := fuzzy.Score(e.Branch, query)
+			if match.Matched {
+				m.filtered = append(m.filtered, filteredEntry{Entry: e, match: match})
 			}
 		}
+		// Sort by descending score
+		sort.Slice(m.filtered, func(i, j int) bool {
+			return m.filtered[i].match.Score > m.filtered[j].match.Score
+		})
 	}
 
 	// Clamp selection
@@ -126,24 +149,28 @@ func (m model) View() string {
 	b.WriteString(m.textInput.View())
 	b.WriteString("\n\n")
 
-	for i, entry := range m.filtered {
+	hasQuery := m.textInput.Value() != ""
+
+	for i, fe := range m.filtered {
 		cursor := "  "
-		branchText := entry.Branch
-		pathText := entry.Rel
+		var branchText string
+		pathText := dimStyle.Render(fe.Rel)
 
 		if i == m.selected {
 			cursor = selectedStyle.Render("> ")
-			branchText = selectedStyle.Render(entry.Branch)
-			pathText = dimStyle.Render(entry.Rel)
-		} else {
-			branchText = fmt.Sprintf("  %s", entry.Branch)
-			pathText = dimStyle.Render(entry.Rel)
-		}
-
-		if i == m.selected {
+			if hasQuery && fe.match.Positions != nil {
+				branchText = highlightBranch(fe.Branch, fe.match.Positions, selectedStyle, highlightStyle)
+			} else {
+				branchText = selectedStyle.Render(fe.Branch)
+			}
 			b.WriteString(fmt.Sprintf("%s%s  %s\n", cursor, branchText, pathText))
 		} else {
-			b.WriteString(fmt.Sprintf("%s  %s\n", branchText, pathText))
+			if hasQuery && fe.match.Positions != nil {
+				branchText = highlightBranch(fe.Branch, fe.match.Positions, lipgloss.NewStyle(), highlightStyle)
+			} else {
+				branchText = fe.Branch
+			}
+			b.WriteString(fmt.Sprintf("  %s  %s\n", branchText, pathText))
 		}
 	}
 
@@ -159,13 +186,21 @@ func (m model) View() string {
 	return b.String()
 }
 
-// fuzzyMatch checks if all characters in pattern appear in str in order.
-func fuzzyMatch(str, pattern string) bool {
-	pi := 0
-	for si := 0; si < len(str) && pi < len(pattern); si++ {
-		if str[si] == pattern[pi] {
-			pi++
+// highlightBranch renders a branch name with matched positions highlighted.
+func highlightBranch(branch string, positions []int, baseStyle, hlStyle lipgloss.Style) string {
+	posSet := make(map[int]bool, len(positions))
+	for _, p := range positions {
+		posSet[p] = true
+	}
+
+	runes := []rune(branch)
+	var b strings.Builder
+	for i, r := range runes {
+		if posSet[i] {
+			b.WriteString(hlStyle.Render(string(r)))
+		} else {
+			b.WriteString(baseStyle.Render(string(r)))
 		}
 	}
-	return pi == len(pattern)
+	return b.String()
 }

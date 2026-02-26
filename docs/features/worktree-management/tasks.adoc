@@ -127,28 +127,28 @@ Description:: Create `internal/fuzzy/fuzzy.go` with `Score(str, pattern string) 
 
 Integrate sanitization and scoring into commands and selectors. Add interactive branch creation.
 
-* [ ] TASK-014: Integrate branch name sanitization into create, remove, and switch commands [sequential]
+* [x] TASK-014: Integrate branch name sanitization into create, remove, and switch commands [sequential]
 +
 Components:: `cmd/create.go`, `cmd/remove.go`, `cmd/switch.go`, `internal/names`
 Stories:: US-009
 Specs:: WT-032, WT-033, WT-034
 Description:: Update `create.go` to compute worktree directory path as `filepath.Join(worktreesDir, names.Sanitize(branch))` instead of using the branch name directly. Pass the original branch name to `git.AddWorktree()`. Update `remove.go` to walk upward from the removed worktree path toward the worktrees directory root and remove any empty parent directories after `git worktree remove`. Update `switch.go` to use sanitized names for path matching. Update `git.AddWorktree()` signature to accept a `base string` parameter (empty string means no base).
 
-* [ ] TASK-015: Add branch listing functions to git module [parallel]
+* [x] TASK-015: Add branch listing functions to git module [parallel]
 +
 Components:: `internal/git/git.go`
 Stories:: US-010, US-011
 Specs:: WT-035, WT-037, WT-038, WT-043
 Description:: Add `ListLocalBranches() ([]string, error)` -- runs `git branch --format='%(refname:short)'`, returns sorted list. Add `ListRemoteBranches() ([]string, error)` -- runs `git branch -r --format='%(refname:short)'`, strips remote prefix, deduplicates, excludes HEAD entries, returns sorted list.
 
-* [ ] TASK-016: Integrate fuzzy scoring into existing worktree selector [parallel]
+* [x] TASK-016: Integrate fuzzy scoring into existing worktree selector [parallel]
 +
 Components:: `internal/tui/selector.go`, `internal/fuzzy`
 Stories:: US-012
 Specs:: WT-048, WT-049, WT-050, WT-051
 Description:: Replace the existing simple fuzzy matching in `selector.go` with `fuzzy.Score()`. When filter text is non-empty: score all entries, exclude non-matches, sort by descending score, highlight matched character positions using lipgloss. When filter text is empty: display all entries in original order without scoring.
 
-* [ ] TASK-017: Implement interactive branch selector and wire into create command [sequential]
+* [x] TASK-017: Implement interactive branch selector and wire into create command [sequential]
 +
 Components:: `internal/tui/branch_selector.go`, `cmd/create.go`, `internal/git`, `internal/names`, `internal/fuzzy`
 Stories:: US-010

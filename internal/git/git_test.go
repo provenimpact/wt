@@ -77,7 +77,7 @@ func TestAddWorktree_NewBranch(t *testing.T) {
 	setupTestRepo(t)
 
 	wtPath := filepath.Join(t.TempDir(), "feature-x")
-	err := AddWorktree(wtPath, "feature-x", true)
+	err := AddWorktree(wtPath, "feature-x", true, "")
 	if err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestAddWorktree_ExistingBranch(t *testing.T) {
 	}
 
 	wtPath := filepath.Join(t.TempDir(), "existing-branch")
-	err := AddWorktree(wtPath, "existing-branch", false)
+	err := AddWorktree(wtPath, "existing-branch", false, "")
 	if err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestRemoveWorktree(t *testing.T) {
 	setupTestRepo(t)
 
 	wtPath := filepath.Join(t.TempDir(), "to-remove")
-	if err := AddWorktree(wtPath, "to-remove", true); err != nil {
+	if err := AddWorktree(wtPath, "to-remove", true, ""); err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
 
@@ -240,7 +240,7 @@ func TestRemoveWorktree_ForceWithDirtyState(t *testing.T) {
 	setupTestRepo(t)
 
 	wtPath := filepath.Join(t.TempDir(), "dirty-wt")
-	if err := AddWorktree(wtPath, "dirty-wt", true); err != nil {
+	if err := AddWorktree(wtPath, "dirty-wt", true, ""); err != nil {
 		t.Fatalf("AddWorktree() error: %v", err)
 	}
 
