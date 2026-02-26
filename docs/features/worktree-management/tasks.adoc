@@ -1,6 +1,6 @@
 = Implementation Tasks: Worktree Management
 :version: 2.0.0
-:status: Current
+:status: Implemented
 :source-design-version: 2.0.0
 :source-stories-version: 1.1.0
 :source-spec-version: 1.1.0
@@ -159,14 +159,14 @@ Description:: Create `internal/tui/branch_selector.go` with `BranchEntry` struct
 
 Add shell tab-completion support.
 
-* [ ] TASK-018: Implement `wt completion` command [parallel]
+* [x] TASK-018: Implement `wt completion` command [parallel]
 +
 Components:: `cmd/completion.go`
 Stories:: US-011
 Specs:: WT-046, WT-047
 Description:: Create `cmd/completion.go` with a `completion` subcommand accepting a shell argument (`bash`, `zsh`, `fish`). Use Cobra's built-in `rootCmd.GenBashCompletionV2()`, `rootCmd.GenZshCompletion()`, `rootCmd.GenFishCompletion()` to output shell-specific completion scripts to stdout. Validate the shell argument; return an error listing supported shells for unsupported values.
 
-* [ ] TASK-019: Add ValidArgsFunction to create, switch, and remove commands [parallel]
+* [x] TASK-019: Add ValidArgsFunction to create, switch, and remove commands [parallel]
 +
 Components:: `cmd/create.go`, `cmd/switch.go`, `cmd/remove.go`, `internal/git`
 Stories:: US-011

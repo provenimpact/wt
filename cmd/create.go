@@ -24,6 +24,12 @@ var createCmd = &cobra.Command{
 	Long:  "Create a new git worktree for the specified branch in the worktrees directory.\nIf no branch is given, an interactive branch selector is shown.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runCreate,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeBranchesForCreate(), cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 func init() {
@@ -189,4 +195,43 @@ func interactiveBranchSelect(worktrees []git.Worktree) (branch string, base stri
 	}
 
 	return selected, "", nil
+}
+
+// completeBranchesForCreate returns branch names for tab completion,
+// excluding branches that already have worktrees.
+func completeBranchesForCreate() []string {
+	worktrees, err := git.ListWorktrees()
+	if err != nil {
+		return nil
+	}
+	wtBranches := make(map[string]bool)
+	for _, wt := range worktrees {
+		wtBranches[wt.Branch] = true
+	}
+
+	var suggestions []string
+
+	local, err := git.ListLocalBranches()
+	if err == nil {
+		for _, b := range local {
+			if !wtBranches[b] {
+				suggestions = append(suggestions, b)
+			}
+		}
+	}
+
+	remote, err := git.ListRemoteBranches()
+	if err == nil {
+		seen := make(map[string]bool)
+		for _, s := range suggestions {
+			seen[s] = true
+		}
+		for _, b := range remote {
+			if !wtBranches[b] && !seen[b] {
+				suggestions = append(suggestions, b)
+			}
+		}
+	}
+
+	return suggestions
 }

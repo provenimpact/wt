@@ -19,6 +19,12 @@ var removeCmd = &cobra.Command{
 	Long:  "Remove a git worktree. If no name is given, an interactive selector is shown.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runRemove,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeLinkedWorktreeBranches(), cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 func init() {

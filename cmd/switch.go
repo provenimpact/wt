@@ -17,6 +17,12 @@ var switchCmd = &cobra.Command{
 	Long:  "Switch to a specific worktree by branch name.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSwitch,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeWorktreeBranches(), cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 func init() {
