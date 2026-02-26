@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -28,7 +29,7 @@ type filteredBranchEntry struct {
 // Returns the selected branch name, or empty string if cancelled.
 func SelectBranch(entries []BranchEntry, header string) (string, error) {
 	m := newBranchModel(entries, header)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	finalModel, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("running branch selector: %w", err)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -28,7 +29,7 @@ type filteredEntry struct {
 // Returns empty string if the user cancels.
 func Select(entries []Entry) (string, error) {
 	m := newModel(entries)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	finalModel, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("running selector: %w", err)
