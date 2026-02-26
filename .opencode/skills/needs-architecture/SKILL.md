@@ -1,11 +1,11 @@
 ---
 name: needs-architecture
-description: Create and maintain the system architecture document. Use when the proven-intent orchestrator determines the architecture document needs creating or updating. Operates at the project level, producing docs/architecture.adoc as a living document reflecting the current system state. Supports greenfield projects (from feature designs), existing projects (from codebase analysis), and updates after feature implementations.
+description: Create and maintain the system architecture document. Use when the proven-needs orchestrator determines the architecture document needs creating or updating. Operates at the project level, producing docs/architecture.adoc as a living document reflecting the current system state. Supports greenfield projects (from feature designs), existing projects (from codebase analysis), and updates after feature implementations.
 ---
 
 ## Prerequisites
 
-This skill is invoked by the `proven-intent` orchestrator, which provides the current state context.
+This skill is invoked by the `proven-needs` orchestrator, which provides the current state context.
 
 ## Observe
 
@@ -108,7 +108,7 @@ Write `docs/architecture.adoc` using the C4 model for structural diagrams. The d
 
 <Who uses the system and what external systems does it interact with.>
 
-[mermaid]
+[source,mermaid]
 ----
 C4Context
   title System Context Diagram
@@ -126,7 +126,7 @@ C4Context
 <Major runtime containers: applications, databases, message queues, file stores.
  Show how containers communicate.>
 
-[mermaid]
+[source,mermaid]
 ----
 C4Container
   title Container Diagram
@@ -151,7 +151,7 @@ C4Container
  Show major modules, services, or layers within a container.
  Include this section only when a container has meaningful internal structure.>
 
-[mermaid]
+[source,mermaid]
 ----
 C4Component
   title Component Diagram - <Container Name>
@@ -172,7 +172,7 @@ C4Component
 <How containers are deployed to infrastructure.
  Include only for non-trivial deployment topologies.>
 
-[mermaid]
+[source,mermaid]
 ----
 C4Deployment
   title Deployment Diagram

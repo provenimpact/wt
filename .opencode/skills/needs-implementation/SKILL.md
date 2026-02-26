@@ -1,11 +1,11 @@
 ---
 name: needs-implementation
-description: Implement code for a feature from its task list or design. Use when the proven-intent orchestrator determines that a feature needs code implementation. Operates within a single feature package at docs/features/<slug>/. Reads the feature's tasks and design to produce working code, one phase at a time. After each phase, verifies the build, commits, and asks the user before proceeding.
+description: Implement code for a feature from its task list or design. Use when the proven-needs orchestrator determines that a feature needs code implementation. Operates within a single feature package at docs/features/<slug>/. Reads the feature's tasks and design to produce working code, one phase at a time. After each phase, verifies the build, commits, and asks the user before proceeding.
 ---
 
 ## Prerequisites
 
-This skill is invoked by the `proven-intent` orchestrator, which provides the feature context (slug, intent, current state).
+This skill is invoked by the `proven-needs` orchestrator, which provides the feature context (slug, intent, current state).
 
 ## Observe
 
@@ -174,7 +174,22 @@ Present options:
 
 #### Design divergence detection
 
-After all phases are complete, compare what was actually implemented against the design document. For each divergence found:
+**This step is MANDATORY after all phases complete. Do not skip it.**
+
+Re-read the feature's design document and compare section-by-section against the actual implementation:
+
+1. **Re-read `docs/features/<slug>/design.adoc` in full.** Do not rely on memory of what the design said -- read the file again now.
+2. **For each section in System Design:**
+   a. Identify what the design specified (components, interfaces, data flow, technology choices)
+   b. Compare against what was actually implemented in code
+   c. Note any differences: additions not in the design, omissions from the design, structural changes, different technology choices
+3. **For each entry in Story Resolution:**
+   a. Verify the implementation satisfies the criteria as designed
+   b. Note any differences in approach or component usage
+4. **If `data-model.adoc` or `contracts/` files exist:** Compare those against the actual data schema and interfaces in code.
+5. **Produce a divergence report -- even if no divergences were found.** An explicit "No divergences detected" confirms the check was performed.
+
+For each divergence found:
 
 1. **Describe the divergence:** What the design specified vs. what was actually built
 2. **Analyze both resolution directions:**
@@ -195,6 +210,8 @@ Design divergences for <slug>:
      Fix code: Move validation into CartService (satisfies architecture constraint: business logic in service layer)
 
   2. ...
+
+(or: "No divergences detected.")
 ```
 
 The orchestrator presents this to the user for decision-making. This skill does NOT modify `design.adoc` -- design updates are routed to `needs-design` by the orchestrator.

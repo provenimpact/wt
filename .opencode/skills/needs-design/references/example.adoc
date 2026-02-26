@@ -51,7 +51,7 @@ None.
 
 === Component Interaction
 
-[mermaid]
+[source,mermaid]
 ----
 flowchart LR
   subgraph Frontend
@@ -89,7 +89,7 @@ flowchart LR
 
 === Add-to-Cart Flow
 
-[mermaid]
+[source,mermaid]
 ----
 sequenceDiagram
   actor User

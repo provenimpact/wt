@@ -1,13 +1,13 @@
 ---
 name: needs-design
-description: Create and maintain implementation design documents for a feature. Use when the proven-intent orchestrator determines that a feature needs a design created, updated, or synced with upstream changes. Operates within a single feature package at docs/features/<slug>/. The design document is a living document that explains HOW the feature works — the implementation blueprint that solves the user stories, constrained by the specs and project-wide ADRs. It stays in sync with stories and specs throughout the feature's lifecycle. Each feature design is fully independent and can be implemented without reading other feature designs.
+description: Create and maintain implementation design documents for a feature. Use when the proven-needs orchestrator determines that a feature needs a design created, updated, or synced with upstream changes. Operates within a single feature package at docs/features/<slug>/. The design document is a living document that explains HOW the feature works — the implementation blueprint that solves the user stories, constrained by the specs and project-wide ADRs. It stays in sync with stories and specs throughout the feature's lifecycle. Each feature design is fully independent and can be implemented without reading other feature designs.
 ---
 
 ## Prerequisites
 
-The `needs-adr` skill must be available. This skill invokes the ADR pattern when technology decisions are identified during the design process.
+This skill is invoked by the `proven-needs` orchestrator, which provides the feature context (slug, intent, current state).
 
-This skill is invoked by the `proven-intent` orchestrator, which provides the feature context (slug, intent, current state).
+During Phase 0 (Research and Decisions), this skill loads the `needs-adr` skill directly when the user confirms that a technology decision should be recorded as an ADR. This is the one case where a capability skill loads another capability skill without routing through the orchestrator -- because the ADR creation is part of the design research phase, not a separate transition step.
 
 ## Observe
 
@@ -131,9 +131,12 @@ Analyze all user stories and specs (if available) to identify:
 3. **Existing system analysis** (non-greenfield only) -- how is the current system structured? What patterns does it use? What can be reused vs. modified?
 
 **For each technology decision not covered by an existing ADR:**
-- Present the decision to the user with context and alternatives
-- Ask whether to create an ADR for it (invoke `needs-adr` via the orchestrator)
-- Record the decision in the design document regardless
+1. Present the decision to the user with context, alternatives considered, and a recommendation
+2. Ask the user: "Should I create an ADR for this decision?"
+3. **If yes:** Load the `needs-adr` skill and create the ADR before proceeding. The design document will reference the new ADR (e.g., `<<../../adrs/NNNN-decision-title.adoc#,ADR-NNNN>>`).
+4. **If no:** Record the decision in the design's "Decisions and Constraints" section with a brief rationale, but note that it is an unrecorded decision (not an ADR).
+
+**Do NOT skip this step.** Technology decisions made during design are the primary source of ADRs. If Phase 0 identifies decisions and the user agrees to create ADRs, the ADRs must be created before moving to Phase 1, so the design document can reference them.
 
 **For each unknown:**
 - Present it to the user as an open question
@@ -159,7 +162,7 @@ Include Mermaid diagrams to clarify component relationships and key flows:
 - **State diagram** (`stateDiagram-v2`) -- for entities with meaningful state transitions (e.g., order lifecycle, session states). Include when the feature manages stateful entities.
 - **Data flow diagram** (`flowchart`) -- when data moves through multiple components or transformations. Include when the data path is not obvious from the component diagram alone.
 
-Embed diagrams inline in the relevant design sections using AsciiDoc `[mermaid]` blocks.
+Embed diagrams inline in the relevant design sections using AsciiDoc `[source,mermaid]` blocks. Note: these render as syntax-highlighted code blocks on GitHub; full diagram rendering requires an Asciidoctor-compatible viewer with the `asciidoctor-diagram` extension.
 
 The structure depends on the project:
 
