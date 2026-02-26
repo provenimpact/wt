@@ -1,5 +1,18 @@
 = State Transition Log
-:last-updated: 2026-02-24
+:last-updated: 2026-02-26
+
+== TRANSITION-003
+:date: 2026-02-26
+:intent: Users can sanitize branch names for worktree directories, interactively select branches when creating worktrees, get shell tab-completion for wt commands, and benefit from ranked fuzzy matching in selectors
+:type: Feature evolution
+:risk: High
+:features: worktree-management (extended)
+:desired-state: User stories US-009 through US-012 implemented: branch name sanitization, interactive branch selection for create, shell tab-completion, and scored fuzzy matching with character highlighting
+:prior-state: worktree-management implemented (stories v1.0.0, spec v1.0.0, design v1.0.0, tasks v1.0.0 Implemented, architecture v1.0.0). 59 tests passing.
+:capabilities-invoked: needs-stories, needs-spec, needs-design, needs-tasks, needs-implementation, needs-tests, needs-architecture
+:constraints-checked: n/a (no constraints defined)
+:result: Achieved
+:artifacts-modified: docs/features/worktree-management/user-stories.adoc (v1.0.0 -> v1.1.0), docs/features/worktree-management/spec.adoc (v1.0.0 -> v1.1.0), docs/features/worktree-management/design.adoc (v1.0.0 -> v2.0.1), docs/features/worktree-management/tasks.adoc (v1.0.0 -> v2.0.0 Implemented), docs/architecture.adoc (v1.0.0 -> v1.1.0), internal/names/names.go (new), internal/names/names_test.go (new), internal/fuzzy/fuzzy.go (new), internal/fuzzy/fuzzy_test.go (new), internal/tui/branch_selector.go (new), internal/tui/selector.go (updated), internal/tui/selector_test.go (updated), internal/git/git.go (updated), internal/git/git_test.go (updated), cmd/create.go (updated), cmd/remove.go (updated), cmd/switch.go (updated), cmd/completion.go (new), cmd/completions.go (new), cmd/cmd_test.go (updated)
 
 == TRANSITION-002
 :date: 2026-02-24
