@@ -27,7 +27,7 @@ E-commerce web application enabling users to browse products, manage a shopping 
 
 == System Context (C4 Level 1)
 
-[mermaid]
+[source,mermaid]
 ----
 C4Context
   title System Context - E-Commerce Application
@@ -46,7 +46,7 @@ The system serves customers through a web interface. It integrates with Stripe f
 
 == Container View (C4 Level 2)
 
-[mermaid]
+[source,mermaid]
 ----
 C4Container
   title Container Diagram - E-Commerce Application
@@ -96,7 +96,7 @@ Technology choices:
 
 The Next.js application container has meaningful internal structure: server-rendered pages, client-side interactive pages, API route handlers, and a service layer.
 
-[mermaid]
+[source,mermaid]
 ----
 C4Component
   title Component Diagram - Next.js Application
