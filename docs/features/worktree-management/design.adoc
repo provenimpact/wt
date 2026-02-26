@@ -1,5 +1,5 @@
 = Design: Worktree Management
-:version: 2.0.0
+:version: 2.0.1
 :status: Current
 :source-stories-version: 1.1.0
 :source-spec-version: 1.1.0
@@ -126,7 +126,7 @@ The existing worktree selector:
 A new selector for choosing branches during interactive `wt create`:
 
 * `BranchEntry` struct: `{ Name string, Source string, HasWorktree bool }` -- where `Source` is `"local"` or `"remote"`, and `HasWorktree` indicates the branch already has a worktree.
-* `SelectBranch(entries []BranchEntry) (string, error)` -- displays the branch list with header "Branches".
+* `SelectBranch(entries []BranchEntry, header string) (string, error)` -- displays the branch list with the given header (e.g., `"Branches"` for branch selection, `"Base branch"` for base selection). The header parameter allows reusing the same selector for both contexts in the interactive create flow.
 * Branches with `HasWorktree == true` are rendered dimmed with a `[worktree]` marker and are not selectable (Enter is a no-op when the cursor is on a disabled entry).
 * Returns the selected branch name, or empty string if cancelled.
 
@@ -510,7 +510,8 @@ wt/
 │   ├── switch.go                  # wt switch <name>
 │   ├── status.go                  # wt status
 │   ├── init.go                    # wt init <shell>
-│   └── completion.go              # wt completion <shell>
+│   ├── completion.go              # wt completion <shell>
+│   └── completions.go             # Shared ValidArgsFunction helpers
 ├── internal/
 │   ├── repo/
 │   │   └── repo.go                # Repository resolution
