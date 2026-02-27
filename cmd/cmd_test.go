@@ -1,11 +1,12 @@
 // Feature: worktree-management
-// Spec version: 1.1.0
+// Spec version: 1.2.0
 // Generated from: spec.adoc
 //
 // Integration tests exercising CLI commands against real git repos.
 //
 // Spec coverage:
-//   WT-004: No worktrees message with suggestion
+//   WT-001: Interactive fuzzy selector including main worktree (interactive, covered by TUI unit tests)
+//   WT-004: No linked worktrees message with suggestion
 //   WT-006: Create worktree command
 //   WT-007: Worktree placement convention
 //   WT-008: Create new branch if not exists
@@ -17,11 +18,11 @@
 //   WT-015: Force remove with uncommitted changes
 //   WT-016: Error on nonexistent worktree remove
 //   WT-017: Remove confirmation message
-//   WT-018: List worktrees with details
-//   WT-019: No additional worktrees message
+//   WT-018: List all worktrees including main with branch, path, and main indicator
+//   WT-019: No additional worktrees message with create suggestion
 //   WT-020: Switch outputs directory-change instruction
-//   WT-021: Switch error with available worktrees
-//   WT-022: Status summary with branch/dirty/remote
+//   WT-021: Switch error lists all worktrees including main
+//   WT-022: Status summary with branch, dirty/clean, and ahead/behind counts
 //   WT-023: Dirty worktree indicator
 //   WT-025: Auto-create worktrees directory
 //   WT-032: Create flat directory for branches with slashes
@@ -30,10 +31,19 @@
 //   WT-039: Direct creation bypasses interactive selector
 //   WT-040: Create branch from specified base reference
 //   WT-043: Tab completion for create suggests branches
-//   WT-044: Tab completion for switch suggests worktrees
+//   WT-044: Tab completion for switch suggests all worktrees including main
 //   WT-045: Tab completion for remove suggests linked worktrees
 //   WT-046: Completion command outputs shell scripts
 //   WT-047: Error on unsupported shell for completion
+//   WT-054: Switch to main worktree by branch name
+//   WT-055: Exclude main worktree from remove choices
+//
+// Interactive-only (require TUI, not testable via binary):
+//   WT-013: Interactive remove selector
+//   WT-035: Interactive branch selector on no-arg create
+//   WT-037: Filter to local branches with --local flag
+//   WT-038: Filter to remote branches with --remote flag
+//   WT-041: Base branch selector for new branches in interactive mode
 
 package cmd
 
@@ -205,7 +215,7 @@ func TestCreate_Duplicate(t *testing.T) {
 
 // --- List tests ---
 
-// WT-018: List worktrees with details.
+// WT-018: List all worktrees including main with branch name, path, and main indicator.
 func TestList_WithWorktrees(t *testing.T) {
 	dir := setupTestRepo(t)
 	runWt(t, dir, "create", "list-test")
@@ -221,15 +231,27 @@ func TestList_WithWorktrees(t *testing.T) {
 	if !strings.Contains(stderr, "BRANCH") {
 		t.Error("list output should contain header 'BRANCH'")
 	}
+	// WT-018: path column must be present
+	if !strings.Contains(stderr, "PATH") {
+		t.Error("list output should contain header 'PATH'")
+	}
 	if !strings.Contains(stderr, "MAIN") {
 		t.Error("list output should contain header 'MAIN'")
 	}
 	if !strings.Contains(stderr, "*") {
 		t.Error("list output should mark main worktree with *")
 	}
+	// WT-018: main worktree branch should be listed
+	if !strings.Contains(stderr, "main") {
+		t.Error("list output should contain main worktree branch")
+	}
+	// WT-018: verify paths are shown (relative path for the linked worktree)
+	if !strings.Contains(stderr, "testrepo-worktrees") {
+		t.Error("list output should contain worktree path")
+	}
 }
 
-// WT-019: No additional worktrees message.
+// WT-019: No additional worktrees message with suggestion to create.
 func TestList_NoWorktrees(t *testing.T) {
 	dir := setupTestRepo(t)
 
@@ -240,6 +262,10 @@ func TestList_NoWorktrees(t *testing.T) {
 
 	if !strings.Contains(stderr, "No additional worktrees") {
 		t.Errorf("stderr should say 'No additional worktrees', got: %s", stderr)
+	}
+	// WT-019: should suggest the wt create command
+	if !strings.Contains(stderr, "wt create") {
+		t.Errorf("stderr should suggest 'wt create' command, got: %s", stderr)
 	}
 }
 
@@ -263,7 +289,7 @@ func TestSwitch_ExistingWorktree(t *testing.T) {
 	}
 }
 
-// WT-021: Switch error with available worktrees.
+// WT-021: Switch error lists all worktrees including main.
 func TestSwitch_NotFound(t *testing.T) {
 	dir := setupTestRepo(t)
 	runWt(t, dir, "create", "available-wt")
@@ -284,6 +310,29 @@ func TestSwitch_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "available-wt") {
 		t.Errorf("stderr should list available worktree 'available-wt', got: %s", stderr)
+	}
+	// WT-021: main worktree should also be listed in available worktrees
+	if !strings.Contains(stderr, "main") {
+		t.Errorf("stderr should list main worktree in available worktrees, got: %s", stderr)
+	}
+}
+
+// WT-054: Switch to main worktree by branch name.
+func TestSwitch_ToMainWorktree(t *testing.T) {
+	dir := setupTestRepo(t)
+	runWt(t, dir, "create", "some-wt")
+
+	stdout, _, err := runWt(t, dir, "switch", "main")
+	if err != nil {
+		t.Fatalf("wt switch main failed: %v", err)
+	}
+
+	if !strings.HasPrefix(stdout, "__wt_cd:") {
+		t.Errorf("stdout should start with __wt_cd:, got: %q", stdout)
+	}
+	// The cd target should be the main repo directory
+	if !strings.Contains(stdout, "testrepo") {
+		t.Errorf("stdout should contain main repo path, got: %q", stdout)
 	}
 }
 
@@ -367,7 +416,7 @@ func TestRemove_ForceWithDirty(t *testing.T) {
 
 // --- Status tests ---
 
-// WT-022: Status summary with branch/dirty/remote.
+// WT-022: Status summary with branch, clean/dirty state, and ahead/behind remote counts.
 // WT-023: Dirty worktree indicator.
 func TestStatus_ShowsDirtyClean(t *testing.T) {
 	dir := setupTestRepo(t)
@@ -388,6 +437,13 @@ func TestStatus_ShowsDirtyClean(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "STATUS") {
 		t.Error("status should have STATUS header")
+	}
+	// WT-022: ahead/behind remote counts must be shown
+	if !strings.Contains(stderr, "AHEAD") {
+		t.Error("status should have AHEAD header")
+	}
+	if !strings.Contains(stderr, "BEHIND") {
+		t.Error("status should have BEHIND header")
 	}
 	if !strings.Contains(stderr, "dirty") {
 		t.Error("status should show 'dirty' for dirty-wt")
@@ -695,7 +751,7 @@ func TestCompletion_CreateSuggestsBranches(t *testing.T) {
 	}
 }
 
-// WT-044: Tab completion for switch suggests existing worktree branch names.
+// WT-044: Tab completion for switch suggests all worktree branch names including main.
 func TestCompletion_SwitchSuggestsWorktrees(t *testing.T) {
 	dir := setupTestRepo(t)
 
@@ -709,6 +765,10 @@ func TestCompletion_SwitchSuggestsWorktrees(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "wt-beta") {
 		t.Errorf("completion should suggest 'wt-beta', got: %s", stdout)
+	}
+	// WT-044: main worktree branch should also be suggested
+	if !strings.Contains(stdout, "main") {
+		t.Errorf("completion should suggest 'main' (main worktree), got: %s", stdout)
 	}
 }
 

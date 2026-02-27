@@ -41,21 +41,24 @@ func runSelector(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Filter to only linked worktrees (not the main one)
+	// Build entry list including main worktree
 	var entries []tui.Entry
+	hasLinked := false
 	for _, wt := range worktrees {
-		if wt.Path == info.MainWorktree {
-			continue
+		isMain := wt.Path == info.MainWorktree
+		if !isMain {
+			hasLinked = true
 		}
 		rel, _ := filepath.Rel(filepath.Dir(info.MainWorktree), wt.Path)
 		entries = append(entries, tui.Entry{
 			Branch: wt.Branch,
 			Path:   wt.Path,
 			Rel:    rel,
+			IsMain: isMain,
 		})
 	}
 
-	if len(entries) == 0 {
+	if !hasLinked {
 		fmt.Fprintln(os.Stderr, "No worktrees found. Create one with: wt create <branch>")
 		return nil
 	}

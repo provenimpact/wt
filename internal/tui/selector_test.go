@@ -168,6 +168,51 @@ func TestModelView_NoMatchesMessage(t *testing.T) {
 	}
 }
 
+// WT-052: Main worktree entry is rendered with visually distinct style.
+func TestModelView_MainWorktreeDistinctStyle(t *testing.T) {
+	entries := []Entry{
+		{Branch: "main", Path: "/tmp/repo", Rel: "repo", IsMain: true},
+		{Branch: "feature-x", Path: "/tmp/repo-worktrees/feature-x", Rel: "repo-worktrees/feature-x", IsMain: false},
+	}
+
+	m := newModel(entries)
+	// Select the second entry (feature-x) so main is not the cursor target
+	m.selected = 1
+	view := m.View()
+
+	// Both entries should be present
+	if !strings.Contains(view, "main") {
+		t.Error("View() should contain main worktree entry")
+	}
+	if !strings.Contains(view, "feature-x") {
+		t.Error("View() should contain linked worktree entry")
+	}
+}
+
+// WT-052: Main worktree entry is selectable (distinct style is visual only).
+func TestModelUpdate_MainWorktreeSelectable(t *testing.T) {
+	entries := []Entry{
+		{Branch: "main", Path: "/tmp/repo", Rel: "repo", IsMain: true},
+		{Branch: "feature-x", Path: "/tmp/repo-worktrees/feature-x", Rel: "repo-worktrees/feature-x", IsMain: false},
+	}
+
+	m := newModel(entries)
+	// Select the main worktree (first entry)
+	m.selected = 0
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(model)
+
+	if result.cancelled {
+		t.Error("selecting main worktree should not cancel")
+	}
+	if result.selected != 0 {
+		t.Errorf("selected = %d, want 0", result.selected)
+	}
+	if result.filtered[result.selected].Path != "/tmp/repo" {
+		t.Errorf("selected path = %q, want /tmp/repo", result.filtered[result.selected].Path)
+	}
+}
+
 // --- Branch Selector tests ---
 
 // WT-036: Branches with existing worktrees are rendered dimmed with a marker

@@ -7,7 +7,6 @@ import (
 
 	"github.com/provenimpact/wt/internal/git"
 	"github.com/provenimpact/wt/internal/names"
-	"github.com/provenimpact/wt/internal/repo"
 	"github.com/spf13/cobra"
 )
 
@@ -32,11 +31,6 @@ func init() {
 func runSwitch(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	info, err := repo.Resolve()
-	if err != nil {
-		return err
-	}
-
 	worktrees, err := git.ListWorktrees()
 	if err != nil {
 		return err
@@ -50,12 +44,9 @@ func runSwitch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Not found -- show available worktrees
+	// Not found -- show all available worktrees including main
 	fmt.Fprintf(os.Stderr, "Worktree %q not found. Available worktrees:\n", name)
 	for _, wt := range worktrees {
-		if wt.Path == info.MainWorktree {
-			continue
-		}
 		fmt.Fprintf(os.Stderr, "  %s\n", wt.Branch)
 	}
 	return fmt.Errorf("worktree %q not found", name)
