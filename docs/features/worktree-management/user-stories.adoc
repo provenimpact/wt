@@ -1,6 +1,6 @@
 = User Stories: Worktree Management
-:version: 1.1.0
-:last-updated: 2026-02-26
+:version: 1.2.0
+:last-updated: 2026-02-27
 :feature: worktree-management
 :toc:
 
@@ -11,10 +11,11 @@ so that I can quickly switch to the worktree I need without remembering its exac
 
 Acceptance Criteria:
 
-* [ ] When the user invokes `wt` with no arguments, the system shall display an interactive fuzzy-search selector listing all existing worktrees for the current repository.
+* [ ] When the user invokes `wt` with no arguments, the system shall display an interactive fuzzy-search selector listing all existing worktrees for the current repository, including the main worktree.
 * [ ] The system shall display each worktree entry with its branch name and relative path.
+* [ ] While the main worktree entry is displayed in the selector, the system shall render it with a visually distinct style to differentiate it from linked worktrees.
 * [ ] When the user selects a worktree from the selector, the system shall output a `cd` command targeting the selected worktree directory.
-* [ ] If no worktrees exist for the current repository, then the system shall display a message indicating no worktrees are available and suggest the `wt create` command.
+* [ ] If only the main worktree exists and no linked worktrees have been created, then the system shall display a message indicating no worktrees are available and suggest the `wt create` command.
 * [ ] If the user cancels the selector (e.g., pressing Escape), then the system shall exit without output.
 
 == US-002: Create Worktree
@@ -51,9 +52,9 @@ so that I can understand what branches I have checked out and where.
 
 Acceptance Criteria:
 
-* [ ] When the user invokes `wt list`, the system shall display all worktrees for the current repository.
+* [ ] When the user invokes `wt list`, the system shall display all worktrees for the current repository, including the main worktree.
 * [ ] The system shall display each worktree with its branch name, path, and whether it is the main worktree.
-* [ ] If no worktrees exist beyond the main worktree, then the system shall display a message indicating no additional worktrees exist.
+* [ ] If only the main worktree exists and no linked worktrees have been created, then the system shall display a message indicating no additional worktrees exist and suggest the `wt create` command.
 
 == US-005: Switch to Worktree
 As a developer,
@@ -63,7 +64,8 @@ so that I can navigate quickly when I already know the worktree name.
 Acceptance Criteria:
 
 * [ ] When the user invokes `wt switch <name>`, the system shall output a `cd` command targeting the specified worktree directory.
-* [ ] If the specified worktree does not exist, then the system shall display an error message and list available worktrees.
+* [ ] The system shall support switching to the main worktree by its branch name.
+* [ ] If the specified worktree does not exist, then the system shall display an error message and list all available worktrees, including the main worktree.
 
 == US-006: Worktree Status Overview
 As a developer,
@@ -137,7 +139,7 @@ so that I can use the CLI efficiently without having to type or remember full na
 Acceptance Criteria:
 
 * [ ] When the user presses Tab after `wt create`, the system shall suggest local and remote branch names, excluding branches that already have a worktree.
-* [ ] When the user presses Tab after `wt switch`, the system shall suggest existing worktree branch names.
+* [ ] When the user presses Tab after `wt switch`, the system shall suggest all existing worktree branch names, including the main worktree branch.
 * [ ] When the user presses Tab after `wt remove`, the system shall suggest existing linked worktree branch names.
 * [ ] The system shall provide a `wt completion <shell>` command that outputs shell-specific completion scripts for Bash, Zsh, and Fish.
 * [ ] If the user invokes `wt completion` with an unsupported shell, then the system shall display an error listing the supported shells.
@@ -154,3 +156,16 @@ Acceptance Criteria:
 * [ ] The system shall sort filtered results by descending match score so that the best matches appear at the top.
 * [ ] The system shall highlight the matched characters in each result entry in the interactive selector.
 * [ ] When no filter text is entered, the system shall display all entries in their original order without scoring.
+
+== US-013: Main Worktree Visibility
+As a developer,
+I want the main repository worktree to appear in all worktree listings and the interactive selector,
+so that I can navigate back to the main worktree using the same workflow I use for linked worktrees.
+
+Acceptance Criteria:
+
+* [ ] The system shall include the main worktree in the interactive selector, the `wt list` output, the `wt switch` error hint, and the `wt switch` tab completions.
+* [ ] While the main worktree is displayed in the interactive selector, the system shall render it with a visually distinct style so that the user can differentiate it from linked worktrees.
+* [ ] While the main worktree is displayed in the `wt list` output, the system shall mark it with a `*` in the MAIN column.
+* [ ] When the user selects the main worktree from the interactive selector, the system shall output a `cd` command targeting the main worktree directory.
+* [ ] When the user invokes `wt remove` interactively or via tab completion, the system shall exclude the main worktree from the available choices.

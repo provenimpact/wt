@@ -1,9 +1,9 @@
 = Design: Worktree Management
-:version: 2.0.1
+:version: 2.1.0
 :status: Current
-:source-stories-version: 1.1.0
-:source-spec-version: 1.1.0
-:last-updated: 2026-02-26
+:source-stories-version: 1.2.0
+:source-spec-version: 1.2.0
+:last-updated: 2026-02-27
 :feature: worktree-management
 :toc:
 
@@ -68,11 +68,11 @@ flowchart TD
 
 Responsibility: Parse CLI arguments and flags, delegate to core modules, format output. Commands that accept branch/worktree name arguments provide `ValidArgsFunction` callbacks for shell tab-completion.
 
-* `root.go` -- Root command. When invoked with no subcommand, runs the interactive worktree selector.
+* `root.go` -- Root command. When invoked with no subcommand, runs the interactive worktree selector. The selector includes the main worktree (with `IsMain: true` on its `tui.Entry`) alongside all linked worktrees. If only the main worktree exists and no linked worktrees have been created, displays a "no worktrees" message instead.
 * `create.go` -- `wt create [branch] [--base <ref>] [--local] [--remote]` subcommand. With a branch argument, creates directly. Without arguments, launches the interactive branch selector. `--base` specifies a starting point for new branches. `--local` / `--remote` filter the interactive branch list. Provides `ValidArgsFunction` that suggests local + remote branches, excluding branches that already have worktrees.
 * `remove.go` -- `wt remove [name] [--force]` subcommand. Provides `ValidArgsFunction` that suggests linked worktree branch names.
-* `list.go` -- `wt list` subcommand.
-* `switch.go` -- `wt switch <name>` subcommand. Provides `ValidArgsFunction` that suggests existing worktree branch names.
+* `list.go` -- `wt list` subcommand. Always displays the full worktree table including the main worktree (marked with `*`). If only the main worktree exists and no linked worktrees have been created, displays a "no additional worktrees" message.
+* `switch.go` -- `wt switch <name>` subcommand. Matches against all worktrees including the main worktree. Provides `ValidArgsFunction` that suggests all existing worktree branch names including the main worktree branch. Error hint when worktree not found lists all worktrees including main.
 * `status.go` -- `wt status` subcommand.
 * `init.go` -- `wt init <shell>` subcommand.
 * `completion.go` -- `wt completion <shell>` subcommand. Outputs shell-specific completion scripts using Cobra's built-in `GenBashCompletionV2()`, `GenZshCompletion()`, `GenFishCompletion()`. Supports `bash`, `zsh`, and `fish`.
@@ -114,12 +114,13 @@ Responsibility: Display interactive fuzzy-search lists using bubbletea.
 
 ==== Worktree Selector (`selector.go`)
 
-The existing worktree selector:
+The worktree selector:
 
-* Receives a list of worktree entries (branch name, path, relative path).
+* Receives a list of worktree entries (branch name, path, relative path, `IsMain` flag).
+* The `Entry` struct has an `IsMain bool` field. When `IsMain` is true, the entry is rendered with a visually distinct style (dimmed foreground color via lipgloss) to differentiate it from linked worktrees (WT-052). The main worktree is still fully selectable -- the distinct style is for visual identification only, not to disable selection.
 * Renders a filterable list with fuzzy matching on branch name.
 * Returns the selected worktree's path, or empty string if cancelled (Escape/Ctrl-C).
-* Reused by the root command (WT-001) and `wt remove` with no args (WT-013).
+* Reused by the root command (WT-001) and `wt remove` with no args (WT-013). When used for `wt remove`, the main worktree entry is excluded from the entry list by the caller (WT-055).
 
 ==== Branch Selector (`branch_selector.go`)
 
@@ -309,11 +310,12 @@ sequenceDiagram
     Git-->>WT: /path/to/.git
     WT->>WT: Resolve main repo + worktrees dir
     WT->>Git: git worktree list --porcelain
-    Git-->>WT: Worktree list
-    alt No worktrees
+    Git-->>WT: Worktree list (including main)
+    alt Only main worktree (no linked worktrees)
         WT-->>Shell: (stderr) No worktrees found. Use 'wt create <branch>'
-    else Has worktrees
-        WT->>TUI: Display selector
+    else Has linked worktrees
+        WT->>WT: Build entry list (main + linked, main marked IsMain)
+        WT->>TUI: Display selector (main in distinct style)
         TUI-->>User: Interactive fuzzy list
         alt User selects worktree
             User->>TUI: Select entry
@@ -391,9 +393,10 @@ sequenceDiagram
 
 Components:: `cmd/root.go`, `internal/tui`, `internal/repo`, `internal/git`
 Criteria::
-* Interactive fuzzy selector on no-arg invocation → Root command invokes TUI selector with worktree list (WT-001, WT-002)
-* Selection outputs cd instruction → Binary writes `__wt_cd:<path>` to stdout (WT-003)
-* No worktrees message → Checked before TUI launch, message written to stderr (WT-004)
+* Interactive fuzzy selector on no-arg invocation, including main worktree → Root command builds entry list from all worktrees (main + linked), sets `IsMain: true` on the main entry, and invokes TUI selector (WT-001, WT-002)
+* Main worktree rendered with distinct style → TUI selector checks `Entry.IsMain` and applies dimmed foreground style via lipgloss (WT-052)
+* Selection outputs cd instruction → Binary writes `__wt_cd:<path>` to stdout, works for both main and linked worktrees (WT-003, WT-053)
+* No linked worktrees message → If only the main worktree exists, message written to stderr suggesting `wt create` (WT-004)
 * Cancel exits silently → TUI returns empty on Escape, binary exits with no stdout (WT-005)
 
 === US-002: Create Worktree
@@ -420,15 +423,15 @@ Criteria::
 
 Components:: `cmd/list.go`, `internal/repo`, `internal/git`
 Criteria::
-* List all worktrees → Calls `git.ListWorktrees()`, formats table to stderr (WT-018)
-* No additional worktrees message → Filter out main, check if empty (WT-019)
+* List all worktrees including main → Calls `git.ListWorktrees()`, formats table to stderr. The main worktree is always included and marked with `*` in the MAIN column (WT-018)
+* No additional worktrees message → If only the main worktree exists (no linked worktrees), display "No additional worktrees" message to stderr suggesting `wt create` (WT-019)
 
 === US-005: Switch to Worktree
 
 Components:: `cmd/switch.go`, `internal/repo`, `internal/git`
 Criteria::
-* Switch outputs cd instruction → Find worktree by name, write `__wt_cd:<path>` to stdout (WT-020)
-* Not found error with list → Error to stderr, list available worktrees (WT-021)
+* Switch outputs cd instruction → Find worktree by name (searches all worktrees including main), write `__wt_cd:<path>` to stdout (WT-020, WT-054)
+* Not found error with list → Error to stderr, list all available worktrees including the main worktree (WT-021)
 
 === US-006: Worktree Status Overview
 
@@ -480,8 +483,8 @@ Criteria::
 Components:: `cmd/create.go`, `cmd/switch.go`, `cmd/remove.go`, `cmd/completion.go`, `internal/git`
 Criteria::
 * Tab completion for create → `ValidArgsFunction` on `createCmd` calls `git.ListLocalBranches()` + `git.ListRemoteBranches()`, filters out branches that have worktrees, returns with `cobra.ShellCompDirectiveNoFileComp` (WT-043)
-* Tab completion for switch → `ValidArgsFunction` on `switchCmd` calls `git.ListWorktrees()`, returns linked worktree branch names (WT-044)
-* Tab completion for remove → `ValidArgsFunction` on `removeCmd` calls `git.ListWorktrees()`, returns linked worktree branch names (WT-045)
+* Tab completion for switch → `ValidArgsFunction` on `switchCmd` calls `completeWorktreeBranches()` which returns all worktree branch names including the main worktree branch (WT-044)
+* Tab completion for remove → `ValidArgsFunction` on `removeCmd` calls `completeLinkedWorktreeBranches()` which returns only linked (non-main) worktree branch names (WT-045, WT-055)
 * Completion command → `cmd/completion.go` uses Cobra's built-in `rootCmd.GenBashCompletionV2()`, `GenZshCompletion()`, `GenFishCompletion()` to output scripts (WT-046)
 * Error on unsupported shell → `completion.go` validates the shell argument and returns an error listing supported shells (WT-047)
 
@@ -493,6 +496,16 @@ Criteria::
 * Sort by descending score → Both selectors sort `filtered` entries by `Match.Score` descending after scoring (WT-049)
 * Highlight matched characters → Selectors use `Match.Positions` to apply lipgloss highlight style to matched characters in the rendered branch name (WT-050)
 * No scoring when filter is empty → When `textInput.Value() == ""`, entries displayed in original order without calling `fuzzy.Score()` (WT-051)
+
+=== US-013: Main Worktree Visibility
+
+Components:: `cmd/root.go`, `cmd/list.go`, `cmd/switch.go`, `cmd/completions.go`, `internal/tui/selector.go`
+Criteria::
+* Main worktree in all listings → `cmd/root.go` includes main worktree in selector entries; `cmd/list.go` always includes main in table; `cmd/switch.go` includes main in error hint; `cmd/completions.go` `completeWorktreeBranches()` includes main branch (WT-001, WT-018, WT-021, WT-044)
+* Visually distinct in selector → `tui.Entry.IsMain` flag drives dimmed lipgloss style in `selector.go` View() (WT-052)
+* Main worktree marked in list → `cmd/list.go` marks main with `*` in MAIN column (WT-018)
+* Selecting main outputs cd → Same `__wt_cd:` mechanism works for main worktree path (WT-053)
+* Exclude main from remove → `cmd/remove.go` filters main from interactive selector; `completeLinkedWorktreeBranches()` excludes main (WT-055)
 
 == Project Structure
 

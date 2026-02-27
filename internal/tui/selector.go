@@ -17,6 +17,7 @@ type Entry struct {
 	Branch string
 	Path   string
 	Rel    string
+	IsMain bool
 }
 
 // filteredEntry holds an Entry along with its fuzzy match result for rendering.
@@ -56,6 +57,7 @@ type model struct {
 var (
 	selectedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	mainStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	promptStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 	highlightStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 )
@@ -157,6 +159,13 @@ func (m model) View() string {
 		var branchText string
 		pathText := dimStyle.Render(fe.Rel)
 
+		// Use distinct style for main worktree entries
+		baseStyle := lipgloss.NewStyle()
+		if fe.IsMain {
+			baseStyle = mainStyle
+			pathText = mainStyle.Render(fe.Rel)
+		}
+
 		if i == m.selected {
 			cursor = selectedStyle.Render("> ")
 			if hasQuery && fe.match.Positions != nil {
@@ -167,9 +176,13 @@ func (m model) View() string {
 			b.WriteString(fmt.Sprintf("%s%s  %s\n", cursor, branchText, pathText))
 		} else {
 			if hasQuery && fe.match.Positions != nil {
-				branchText = highlightBranch(fe.Branch, fe.match.Positions, lipgloss.NewStyle(), highlightStyle)
+				branchText = highlightBranch(fe.Branch, fe.match.Positions, baseStyle, highlightStyle)
 			} else {
-				branchText = fe.Branch
+				if fe.IsMain {
+					branchText = mainStyle.Render(fe.Branch)
+				} else {
+					branchText = fe.Branch
+				}
 			}
 			b.WriteString(fmt.Sprintf("  %s  %s\n", branchText, pathText))
 		}

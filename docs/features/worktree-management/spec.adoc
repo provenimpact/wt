@@ -1,17 +1,17 @@
 = Specification: Worktree Management
-:version: 1.1.0
-:source-stories-version: 1.1.0
-:last-updated: 2026-02-26
+:version: 1.2.0
+:source-stories-version: 1.2.0
+:last-updated: 2026-02-27
 :feature: worktree-management
 :prefix: WT
 :toc:
 
 == WT-001
-When the user invokes `wt` with no arguments, the system shall display an interactive fuzzy-search selector listing all existing worktrees for the current repository.
+When the user invokes `wt` with no arguments, the system shall display an interactive fuzzy-search selector listing all existing worktrees for the current repository, including the main worktree.
 
 Type:: Event-driven
 Source:: US-001: Criterion 1
-Verification:: Run `wt` with no arguments in a repository that has worktrees. Confirm an interactive fuzzy-search selector appears listing all worktrees.
+Verification:: Run `wt` with no arguments in a repository that has worktrees. Confirm an interactive fuzzy-search selector appears listing all worktrees, including the main worktree.
 
 == WT-002
 The system shall display each worktree entry in the selector with its branch name and relative path.
@@ -24,21 +24,21 @@ Verification:: Run `wt` with no arguments. Confirm each entry shows the branch n
 When the user selects a worktree from the interactive selector, the system shall output a directory-change instruction targeting the selected worktree directory.
 
 Type:: Event-driven
-Source:: US-001: Criterion 3
+Source:: US-001: Criterion 4
 Verification:: Run `wt`, select a worktree. Confirm the output is a valid directory-change instruction pointing to the selected worktree.
 
 == WT-004
-If no worktrees exist for the current repository, then the system shall display a message indicating no worktrees are available and suggest creating one.
+If only the main worktree exists and no linked worktrees have been created, then the system shall display a message indicating no worktrees are available and suggest creating one.
 
 Type:: Unwanted behavior
-Source:: US-001: Criterion 4
-Verification:: Run `wt` in a repository with no worktrees. Confirm a helpful message is displayed suggesting the create command.
+Source:: US-001: Criterion 5
+Verification:: Run `wt` in a repository with only the main worktree and no linked worktrees. Confirm a helpful message is displayed suggesting the create command.
 
 == WT-005
 When the user cancels the interactive selector, the system shall exit without producing output.
 
 Type:: Event-driven
-Source:: US-001: Criterion 5
+Source:: US-001: Criterion 6
 Verification:: Run `wt`, press Escape. Confirm the system exits silently with no output.
 
 == WT-006
@@ -126,18 +126,18 @@ Source:: US-003: Criterion 5
 Verification:: Remove an existing worktree. Confirm a success message is displayed.
 
 == WT-018
-When the user invokes `wt list`, the system shall display all worktrees for the current repository with branch name, path, and main worktree indicator.
+When the user invokes `wt list`, the system shall display all worktrees for the current repository, including the main worktree, with branch name, path, and main worktree indicator.
 
 Type:: Event-driven
 Source:: US-004: Criterion 1, US-004: Criterion 2
-Verification:: Run `wt list` in a repository with multiple worktrees. Confirm all worktrees are listed with branch, path, and main indicator.
+Verification:: Run `wt list` in a repository with multiple worktrees. Confirm all worktrees are listed with branch, path, and main indicator. Confirm the main worktree is included with a `*` marker.
 
 == WT-019
-If no worktrees exist beyond the main worktree, then the system shall display a message indicating no additional worktrees exist.
+If only the main worktree exists and no linked worktrees have been created, then the system shall display a message indicating no additional worktrees exist and suggest the `wt create` command.
 
 Type:: Unwanted behavior
 Source:: US-004: Criterion 3
-Verification:: Run `wt list` with only the main worktree. Confirm a message indicates no additional worktrees.
+Verification:: Run `wt list` with only the main worktree. Confirm a message indicates no additional worktrees and suggests creating one.
 
 == WT-020
 When the user invokes `wt switch <name>`, the system shall output a directory-change instruction targeting the specified worktree directory.
@@ -147,11 +147,11 @@ Source:: US-005: Criterion 1
 Verification:: Run `wt switch feature-x` for an existing worktree. Confirm the output is a directory-change instruction to that worktree.
 
 == WT-021
-If the specified worktree does not exist when invoking `wt switch`, then the system shall display an error message and list available worktrees.
+If the specified worktree does not exist when invoking `wt switch`, then the system shall display an error message and list all available worktrees, including the main worktree.
 
 Type:: Unwanted behavior
-Source:: US-005: Criterion 2
-Verification:: Run `wt switch nonexistent`. Confirm an error is displayed along with a list of available worktrees.
+Source:: US-005: Criterion 3
+Verification:: Run `wt switch nonexistent`. Confirm an error is displayed along with a list of all available worktrees, including the main worktree.
 
 == WT-022
 When the user invokes `wt status`, the system shall display a summary of all worktrees including branch name, clean/dirty state, and ahead/behind remote counts.
@@ -308,11 +308,11 @@ Source:: US-011: Criterion 1
 Verification:: Source the completion script. Type `wt create ` and press Tab. Confirm branch names are suggested, and branches with existing worktrees are excluded.
 
 == WT-044
-When the user presses Tab after `wt switch`, the system shall suggest existing worktree branch names.
+When the user presses Tab after `wt switch`, the system shall suggest all existing worktree branch names, including the main worktree branch.
 
 Type:: Event-driven
 Source:: US-011: Criterion 2
-Verification:: Source the completion script. Type `wt switch ` and press Tab. Confirm existing worktree branch names are suggested.
+Verification:: Source the completion script. Type `wt switch ` and press Tab. Confirm all existing worktree branch names are suggested, including the main worktree branch.
 
 == WT-045
 When the user presses Tab after `wt remove`, the system shall suggest existing linked worktree branch names.
@@ -363,6 +363,34 @@ Type:: Event-driven
 Source:: US-012: Criterion 5
 Verification:: Open the interactive selector. Without typing any filter text, confirm all entries are displayed in their default order.
 
+== WT-052
+While the main worktree entry is displayed in the interactive selector, the system shall render it with a visually distinct style to differentiate it from linked worktrees.
+
+Type:: State-driven
+Source:: US-001: Criterion 3, US-013: Criterion 2
+Verification:: Run `wt` with no arguments in a repository with linked worktrees. Confirm the main worktree entry is rendered with a different visual style than linked worktree entries.
+
+== WT-053
+When the user selects the main worktree from the interactive selector, the system shall output a directory-change instruction targeting the main worktree directory.
+
+Type:: Event-driven
+Source:: US-013: Criterion 4
+Verification:: Run `wt`, select the main worktree entry. Confirm the output is a valid directory-change instruction pointing to the main repository directory.
+
+== WT-054
+The system shall support switching to the main worktree by its branch name via `wt switch`.
+
+Type:: Ubiquitous
+Source:: US-005: Criterion 2
+Verification:: Run `wt switch main` (where `main` is the main worktree branch). Confirm the output is a directory-change instruction targeting the main repository directory.
+
+== WT-055
+When the user invokes `wt remove` interactively or via tab completion, the system shall exclude the main worktree from the available choices.
+
+Type:: Event-driven
+Source:: US-013: Criterion 5
+Verification:: Run `wt remove` with no arguments. Confirm the interactive selector does not include the main worktree. Source the completion script, type `wt remove ` and press Tab. Confirm the main worktree branch is not suggested.
+
 == Traceability
 
 [cols="1,2,2", options="header"]
@@ -370,7 +398,7 @@ Verification:: Open the interactive selector. Without typing any filter text, co
 | Requirement ID | Requirement Summary | Source
 
 | WT-001
-| Interactive fuzzy selector on no-arg invocation
+| Interactive fuzzy selector on no-arg invocation (including main worktree)
 | US-001: Criterion 1
 
 | WT-002
@@ -379,15 +407,15 @@ Verification:: Open the interactive selector. Without typing any filter text, co
 
 | WT-003
 | Selection outputs directory-change instruction
-| US-001: Criterion 3
+| US-001: Criterion 4
 
 | WT-004
-| No worktrees message with suggestion
-| US-001: Criterion 4
+| No linked worktrees message with suggestion
+| US-001: Criterion 5
 
 | WT-005
 | Cancel exits silently
-| US-001: Criterion 5
+| US-001: Criterion 6
 
 | WT-006
 | Create worktree command
@@ -438,11 +466,11 @@ Verification:: Open the interactive selector. Without typing any filter text, co
 | US-003: Criterion 5
 
 | WT-018
-| List worktrees with details
+| List all worktrees including main with details
 | US-004: Criterion 1, US-004: Criterion 2
 
 | WT-019
-| No additional worktrees message
+| No additional worktrees message with suggestion
 | US-004: Criterion 3
 
 | WT-020
@@ -450,8 +478,8 @@ Verification:: Open the interactive selector. Without typing any filter text, co
 | US-005: Criterion 1
 
 | WT-021
-| Switch error with available worktrees
-| US-005: Criterion 2
+| Switch error lists all worktrees including main
+| US-005: Criterion 3
 
 | WT-022
 | Status summary with branch/dirty/remote
@@ -542,7 +570,7 @@ Verification:: Open the interactive selector. Without typing any filter text, co
 | US-011: Criterion 1
 
 | WT-044
-| Tab completion for switch suggests worktrees
+| Tab completion for switch suggests all worktrees including main
 | US-011: Criterion 2
 
 | WT-045
@@ -572,4 +600,20 @@ Verification:: Open the interactive selector. Without typing any filter text, co
 | WT-051
 | No scoring when filter is empty
 | US-012: Criterion 5
+
+| WT-052
+| Main worktree visually distinct in selector
+| US-001: Criterion 3, US-013: Criterion 2
+
+| WT-053
+| Selecting main worktree outputs directory-change instruction
+| US-013: Criterion 4
+
+| WT-054
+| Switch to main worktree by branch name
+| US-005: Criterion 2
+
+| WT-055
+| Exclude main worktree from remove choices
+| US-013: Criterion 5
 |===
