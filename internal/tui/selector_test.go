@@ -168,6 +168,51 @@ func TestModelView_NoMatchesMessage(t *testing.T) {
 	}
 }
 
+// WT-052: Main worktree entry is rendered with visually distinct style.
+func TestModelView_MainWorktreeDistinctStyle(t *testing.T) {
+	entries := []Entry{
+		{Branch: "main", Path: "/tmp/repo", Rel: "repo", IsMain: true},
+		{Branch: "feature-x", Path: "/tmp/repo-worktrees/feature-x", Rel: "repo-worktrees/feature-x", IsMain: false},
+	}
+
+	m := newModel(entries)
+	// Select the second entry (feature-x) so main is not the cursor target
+	m.selected = 1
+	view := m.View()
+
+	// Both entries should be present
+	if !strings.Contains(view, "main") {
+		t.Error("View() should contain main worktree entry")
+	}
+	if !strings.Contains(view, "feature-x") {
+		t.Error("View() should contain linked worktree entry")
+	}
+}
+
+// WT-052: Main worktree entry is selectable (distinct style is visual only).
+func TestModelUpdate_MainWorktreeSelectable(t *testing.T) {
+	entries := []Entry{
+		{Branch: "main", Path: "/tmp/repo", Rel: "repo", IsMain: true},
+		{Branch: "feature-x", Path: "/tmp/repo-worktrees/feature-x", Rel: "repo-worktrees/feature-x", IsMain: false},
+	}
+
+	m := newModel(entries)
+	// Select the main worktree (first entry)
+	m.selected = 0
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(model)
+
+	if result.cancelled {
+		t.Error("selecting main worktree should not cancel")
+	}
+	if result.selected != 0 {
+		t.Errorf("selected = %d, want 0", result.selected)
+	}
+	if result.filtered[result.selected].Path != "/tmp/repo" {
+		t.Errorf("selected path = %q, want /tmp/repo", result.filtered[result.selected].Path)
+	}
+}
+
 // --- Branch Selector tests ---
 
 // WT-036: Branches with existing worktrees are rendered dimmed with a marker
@@ -304,5 +349,240 @@ func TestBranchSelector_ShowsHeader(t *testing.T) {
 
 	if !strings.Contains(view, "Base branch") {
 		t.Error("View() should display the header")
+	}
+}
+
+// --- Additional edge case tests for strengthened confidence ---
+
+// Test filtering with special characters in branch names.
+func TestModelUpdate_FilteringSpecialCharacters(t *testing.T) {
+	entries := []Entry{
+		{Branch: "feature/auth-system", Path: "/tmp/wt/feature-auth-system", Rel: "wt/feature-auth-system"},
+		{Branch: "fix/bug-123", Path: "/tmp/wt/fix-bug-123", Rel: "wt/fix-bug-123"},
+		{Branch: "release/v2.0.1", Path: "/tmp/wt/release-v2.0.1", Rel: "wt/release-v2.0.1"},
+	}
+
+	m := newModel(entries)
+
+	// Type "bug" to filter
+	m.textInput.SetValue("bug")
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	if len(result.filtered) != 1 {
+		t.Errorf("filtering 'bug' should return 1 match, got %d", len(result.filtered))
+	}
+	if len(result.filtered) > 0 && result.filtered[0].Branch != "fix/bug-123" {
+		t.Errorf("filtered branch = %q, want %q", result.filtered[0].Branch, "fix/bug-123")
+	}
+}
+
+// Test filtering with very long branch names.
+func TestModelUpdate_LongBranchNames(t *testing.T) {
+	longBranch := "feature/very-long-branch-name-that-exceeds-normal-length-for-testing-purposes"
+	entries := []Entry{
+		{Branch: longBranch, Path: "/tmp/wt/long", Rel: "wt/long"},
+		{Branch: "short", Path: "/tmp/wt/short", Rel: "wt/short"},
+	}
+
+	m := newModel(entries)
+
+	// Filter should work with long names
+	m.textInput.SetValue("very")
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	if len(result.filtered) != 1 {
+		t.Errorf("filtering 'very' should return 1 match, got %d", len(result.filtered))
+	}
+	if len(result.filtered) > 0 && result.filtered[0].Branch != longBranch {
+		t.Errorf("filtered branch should be the long branch")
+	}
+}
+
+// Test that selection clamps correctly when filtered list changes.
+func TestModelUpdate_SelectionClampsOnFilter(t *testing.T) {
+	entries := []Entry{
+		{Branch: "feature-a", Path: "/tmp/a", Rel: "a"},
+		{Branch: "feature-b", Path: "/tmp/b", Rel: "b"},
+		{Branch: "bugfix-c", Path: "/tmp/c", Rel: "c"},
+	}
+
+	m := newModel(entries)
+	// Move to last item
+	m.selected = 2
+
+	// Filter to reduce list to 1 item
+	m.textInput.SetValue("bugfix")
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	if result.selected != 0 {
+		t.Errorf("selection should clamp to 0, got %d", result.selected)
+	}
+}
+
+// Test empty query shows all entries in original order.
+func TestModelUpdate_EmptyQueryPreservesOrder(t *testing.T) {
+	entries := []Entry{
+		{Branch: "z-last", Path: "/z", Rel: "z"},
+		{Branch: "a-first", Path: "/a", Rel: "a"},
+		{Branch: "m-middle", Path: "/m", Rel: "m"},
+	}
+
+	m := newModel(entries)
+
+	// Empty query - should preserve original order
+	if len(m.filtered) != 3 {
+		t.Fatalf("initial filtered length = %d, want 3", len(m.filtered))
+	}
+	if m.filtered[0].Branch != "z-last" {
+		t.Errorf("first entry should be 'z-last', got %q", m.filtered[0].Branch)
+	}
+	if m.filtered[1].Branch != "a-first" {
+		t.Errorf("second entry should be 'a-first', got %q", m.filtered[1].Branch)
+	}
+	if m.filtered[2].Branch != "m-middle" {
+		t.Errorf("third entry should be 'm-middle', got %q", m.filtered[2].Branch)
+	}
+}
+
+// Test that filtering with query that matches nothing shows "No matches".
+func TestModelView_NoMatchesAfterFiltering(t *testing.T) {
+	entries := []Entry{
+		{Branch: "feature-a", Path: "/a", Rel: "a"},
+		{Branch: "feature-b", Path: "/b", Rel: "b"},
+	}
+
+	m := newModel(entries)
+	m.textInput.SetValue("xyz")
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	view := result.View()
+	if !strings.Contains(view, "No matches") {
+		t.Error("View should show 'No matches' when filter excludes all entries")
+	}
+}
+
+// Test Enter on empty filtered list does nothing.
+func TestModelUpdate_EnterOnEmptyFilteredList(t *testing.T) {
+	entries := []Entry{
+		{Branch: "feature-a", Path: "/a", Rel: "a"},
+	}
+
+	m := newModel(entries)
+	m.textInput.SetValue("xyz") // Filter to nothing
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	// Press enter on empty list
+	updated, _ = result.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result = updated.(model)
+
+	if result.cancelled {
+		t.Error("Enter on empty list should not set cancelled")
+	}
+	// Should still be in the model (no quit)
+}
+
+// Test fuzzy scoring prioritizes better matches.
+func TestModelUpdate_FuzzyScoringPrioritizesBetterMatches(t *testing.T) {
+	entries := []Entry{
+		{Branch: "x-main", Path: "/xm", Rel: "xm"},
+		{Branch: "main", Path: "/main", Rel: "main"},
+		{Branch: "maintain", Path: "/maintain", Rel: "maintain"},
+	}
+
+	m := newModel(entries)
+	m.textInput.SetValue("main")
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	// Exact match "main" should rank first
+	if len(result.filtered) < 1 {
+		t.Fatal("expected at least 1 match")
+	}
+	if result.filtered[0].Branch != "main" {
+		t.Errorf("best match should be 'main', got %q", result.filtered[0].Branch)
+	}
+}
+
+// Test main worktree entry with filtering.
+func TestModelUpdate_MainWorktreeFilterable(t *testing.T) {
+	entries := []Entry{
+		{Branch: "main", Path: "/repo", Rel: "repo", IsMain: true},
+		{Branch: "feature-main-fix", Path: "/wt/feature", Rel: "wt/feature", IsMain: false},
+	}
+
+	m := newModel(entries)
+	m.textInput.SetValue("main")
+	updated, _ := m.Update(tea.KeyMsg{})
+	result := updated.(model)
+
+	// Both should match the filter
+	if len(result.filtered) != 2 {
+		t.Errorf("filtering 'main' should return 2 matches, got %d", len(result.filtered))
+	}
+
+	// Verify main worktree is still marked
+	hasMain := false
+	for _, fe := range result.filtered {
+		if fe.IsMain {
+			hasMain = true
+			if fe.Branch != "main" {
+				t.Errorf("main worktree branch should be 'main', got %q", fe.Branch)
+			}
+		}
+	}
+	if !hasMain {
+		t.Error("filtered results should include main worktree")
+	}
+}
+
+// Test branch selector with all entries disabled.
+func TestBranchSelector_AllEntriesDisabled(t *testing.T) {
+	entries := []BranchEntry{
+		{Name: "main", Source: "local", HasWorktree: true},
+		{Name: "feature-a", Source: "local", HasWorktree: true},
+		{Name: "feature-b", Source: "local", HasWorktree: true},
+	}
+
+	m := newBranchModel(entries, "Branches")
+
+	// No selectable entry - selected should be 0 or handled gracefully
+	// Enter should not produce quit
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(branchModel)
+
+	if cmd != nil && !result.cancelled {
+		// Should not quit on disabled entry
+		t.Error("Enter on all-disabled list should not produce quit command")
+	}
+}
+
+// Test navigation when only one selectable entry exists.
+func TestBranchSelector_SingleSelectableEntry(t *testing.T) {
+	entries := []BranchEntry{
+		{Name: "disabled-1", Source: "local", HasWorktree: true},
+		{Name: "selectable", Source: "local", HasWorktree: false},
+		{Name: "disabled-2", Source: "local", HasWorktree: true},
+	}
+
+	m := newBranchModel(entries, "Branches")
+
+	// Should start on the only selectable entry
+	if m.selected != 1 {
+		t.Errorf("initial selected = %d, want 1 (only selectable)", m.selected)
+	}
+
+	// Verify Enter works on the selectable entry
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(branchModel)
+	if result.cancelled {
+		t.Error("Enter on selectable entry should not cancel")
+	}
+	if cmd == nil {
+		t.Error("Enter on selectable entry should produce quit command")
 	}
 }

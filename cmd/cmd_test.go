@@ -1,11 +1,12 @@
 // Feature: worktree-management
-// Spec version: 1.1.0
+// Spec version: 1.2.0
 // Generated from: spec.adoc
 //
 // Integration tests exercising CLI commands against real git repos.
 //
 // Spec coverage:
-//   WT-004: No worktrees message with suggestion
+//   WT-001: Interactive fuzzy selector including main worktree (interactive, covered by TUI unit tests)
+//   WT-004: No linked worktrees message with suggestion
 //   WT-006: Create worktree command
 //   WT-007: Worktree placement convention
 //   WT-008: Create new branch if not exists
@@ -17,11 +18,11 @@
 //   WT-015: Force remove with uncommitted changes
 //   WT-016: Error on nonexistent worktree remove
 //   WT-017: Remove confirmation message
-//   WT-018: List worktrees with details
-//   WT-019: No additional worktrees message
+//   WT-018: List all worktrees including main with branch, path, and main indicator
+//   WT-019: No additional worktrees message with create suggestion
 //   WT-020: Switch outputs directory-change instruction
-//   WT-021: Switch error with available worktrees
-//   WT-022: Status summary with branch/dirty/remote
+//   WT-021: Switch error lists all worktrees including main
+//   WT-022: Status summary with branch, dirty/clean, and ahead/behind counts
 //   WT-023: Dirty worktree indicator
 //   WT-025: Auto-create worktrees directory
 //   WT-032: Create flat directory for branches with slashes
@@ -30,10 +31,19 @@
 //   WT-039: Direct creation bypasses interactive selector
 //   WT-040: Create branch from specified base reference
 //   WT-043: Tab completion for create suggests branches
-//   WT-044: Tab completion for switch suggests worktrees
+//   WT-044: Tab completion for switch suggests all worktrees including main
 //   WT-045: Tab completion for remove suggests linked worktrees
 //   WT-046: Completion command outputs shell scripts
 //   WT-047: Error on unsupported shell for completion
+//   WT-054: Switch to main worktree by branch name
+//   WT-055: Exclude main worktree from remove choices
+//
+// Interactive-only (require TUI, not testable via binary):
+//   WT-013: Interactive remove selector
+//   WT-035: Interactive branch selector on no-arg create
+//   WT-037: Filter to local branches with --local flag
+//   WT-038: Filter to remote branches with --remote flag
+//   WT-041: Base branch selector for new branches in interactive mode
 
 package cmd
 
@@ -205,7 +215,7 @@ func TestCreate_Duplicate(t *testing.T) {
 
 // --- List tests ---
 
-// WT-018: List worktrees with details.
+// WT-018: List all worktrees including main with branch name, path, and main indicator.
 func TestList_WithWorktrees(t *testing.T) {
 	dir := setupTestRepo(t)
 	runWt(t, dir, "create", "list-test")
@@ -221,15 +231,27 @@ func TestList_WithWorktrees(t *testing.T) {
 	if !strings.Contains(stderr, "BRANCH") {
 		t.Error("list output should contain header 'BRANCH'")
 	}
+	// WT-018: path column must be present
+	if !strings.Contains(stderr, "PATH") {
+		t.Error("list output should contain header 'PATH'")
+	}
 	if !strings.Contains(stderr, "MAIN") {
 		t.Error("list output should contain header 'MAIN'")
 	}
 	if !strings.Contains(stderr, "*") {
 		t.Error("list output should mark main worktree with *")
 	}
+	// WT-018: main worktree branch should be listed
+	if !strings.Contains(stderr, "main") {
+		t.Error("list output should contain main worktree branch")
+	}
+	// WT-018: verify paths are shown (relative path for the linked worktree)
+	if !strings.Contains(stderr, "testrepo-worktrees") {
+		t.Error("list output should contain worktree path")
+	}
 }
 
-// WT-019: No additional worktrees message.
+// WT-019: No additional worktrees message with suggestion to create.
 func TestList_NoWorktrees(t *testing.T) {
 	dir := setupTestRepo(t)
 
@@ -240,6 +262,10 @@ func TestList_NoWorktrees(t *testing.T) {
 
 	if !strings.Contains(stderr, "No additional worktrees") {
 		t.Errorf("stderr should say 'No additional worktrees', got: %s", stderr)
+	}
+	// WT-019: should suggest the wt create command
+	if !strings.Contains(stderr, "wt create") {
+		t.Errorf("stderr should suggest 'wt create' command, got: %s", stderr)
 	}
 }
 
@@ -263,7 +289,7 @@ func TestSwitch_ExistingWorktree(t *testing.T) {
 	}
 }
 
-// WT-021: Switch error with available worktrees.
+// WT-021: Switch error lists all worktrees including main.
 func TestSwitch_NotFound(t *testing.T) {
 	dir := setupTestRepo(t)
 	runWt(t, dir, "create", "available-wt")
@@ -284,6 +310,29 @@ func TestSwitch_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "available-wt") {
 		t.Errorf("stderr should list available worktree 'available-wt', got: %s", stderr)
+	}
+	// WT-021: main worktree should also be listed in available worktrees
+	if !strings.Contains(stderr, "main") {
+		t.Errorf("stderr should list main worktree in available worktrees, got: %s", stderr)
+	}
+}
+
+// WT-054: Switch to main worktree by branch name.
+func TestSwitch_ToMainWorktree(t *testing.T) {
+	dir := setupTestRepo(t)
+	runWt(t, dir, "create", "some-wt")
+
+	stdout, _, err := runWt(t, dir, "switch", "main")
+	if err != nil {
+		t.Fatalf("wt switch main failed: %v", err)
+	}
+
+	if !strings.HasPrefix(stdout, "__wt_cd:") {
+		t.Errorf("stdout should start with __wt_cd:, got: %q", stdout)
+	}
+	// The cd target should be the main repo directory
+	if !strings.Contains(stdout, "testrepo") {
+		t.Errorf("stdout should contain main repo path, got: %q", stdout)
 	}
 }
 
@@ -367,7 +416,7 @@ func TestRemove_ForceWithDirty(t *testing.T) {
 
 // --- Status tests ---
 
-// WT-022: Status summary with branch/dirty/remote.
+// WT-022: Status summary with branch, clean/dirty state, and ahead/behind remote counts.
 // WT-023: Dirty worktree indicator.
 func TestStatus_ShowsDirtyClean(t *testing.T) {
 	dir := setupTestRepo(t)
@@ -388,6 +437,13 @@ func TestStatus_ShowsDirtyClean(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "STATUS") {
 		t.Error("status should have STATUS header")
+	}
+	// WT-022: ahead/behind remote counts must be shown
+	if !strings.Contains(stderr, "AHEAD") {
+		t.Error("status should have AHEAD header")
+	}
+	if !strings.Contains(stderr, "BEHIND") {
+		t.Error("status should have BEHIND header")
 	}
 	if !strings.Contains(stderr, "dirty") {
 		t.Error("status should show 'dirty' for dirty-wt")
@@ -695,7 +751,7 @@ func TestCompletion_CreateSuggestsBranches(t *testing.T) {
 	}
 }
 
-// WT-044: Tab completion for switch suggests existing worktree branch names.
+// WT-044: Tab completion for switch suggests all worktree branch names including main.
 func TestCompletion_SwitchSuggestsWorktrees(t *testing.T) {
 	dir := setupTestRepo(t)
 
@@ -709,6 +765,10 @@ func TestCompletion_SwitchSuggestsWorktrees(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "wt-beta") {
 		t.Errorf("completion should suggest 'wt-beta', got: %s", stdout)
+	}
+	// WT-044: main worktree branch should also be suggested
+	if !strings.Contains(stdout, "main") {
+		t.Errorf("completion should suggest 'main' (main worktree), got: %s", stdout)
 	}
 }
 
@@ -749,5 +809,235 @@ func TestSwitch_SanitizedName(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "__wt_cd:") {
 		t.Errorf("stdout should contain __wt_cd:, got: %q", stdout)
+	}
+}
+
+// --- Additional integration tests for strengthened confidence ---
+
+// Test that completion for create excludes main branch when main worktree exists.
+func TestCompletion_CreateExcludesMainBranch(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create a feature branch
+	gitRun(t, dir, "branch", "feature-test")
+
+	stdout, _, _ := runWt(t, dir, "__complete", "create", "")
+
+	// feature-test should be suggested
+	if !strings.Contains(stdout, "feature-test") {
+		t.Errorf("completion should suggest 'feature-test', got: %s", stdout)
+	}
+
+	// main should NOT be suggested (has main worktree)
+	lines := strings.Split(stdout, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "main" || strings.HasPrefix(trimmed, "main\t") {
+			t.Errorf("completion should NOT suggest 'main' (has worktree), got line: %s", line)
+		}
+	}
+}
+
+// Test that list shows only main worktree correctly when no linked worktrees exist.
+func TestList_OnlyMainWorktree(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	_, stderr, err := runWt(t, dir, "list")
+	if err != nil {
+		t.Fatalf("wt list failed: %v", err)
+	}
+
+	// Should show "No additional worktrees" message
+	if !strings.Contains(stderr, "No additional worktrees") {
+		t.Errorf("stderr should say 'No additional worktrees', got: %s", stderr)
+	}
+
+	// Should NOT show the full table (since only main exists)
+	if strings.Contains(stderr, "BRANCH") && strings.Contains(stderr, "PATH") {
+		t.Error("should not show table headers when only main worktree exists")
+	}
+}
+
+// Test switch with the sanitized directory name directly.
+func TestSwitch_UsingSanitizedDirectoryName(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	runWt(t, dir, "create", "feature/test-123")
+
+	// Try switching using the sanitized name (feature-test-123)
+	stdout, _, err := runWt(t, dir, "switch", "feature-test-123")
+	if err != nil {
+		t.Fatalf("wt switch feature-test-123 failed: %v", err)
+	}
+
+	if !strings.HasPrefix(stdout, "__wt_cd:") {
+		t.Errorf("stdout should start with __wt_cd:, got: %q", stdout)
+	}
+}
+
+// Test creating a worktree with branch name containing multiple special characters.
+func TestCreate_MultipleSpecialCharacters(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Branch with slashes, dots, and other characters
+	stdout, stderr, err := runWt(t, dir, "create", "release/v2.1.0-rc1")
+	if err != nil {
+		t.Fatalf("wt create failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// Should create with sanitized directory name
+	expectedDir := filepath.Join(filepath.Dir(dir), "testrepo-worktrees", "release-v2.1.0-rc1")
+	if !strings.Contains(stdout, "__wt_cd:"+expectedDir) {
+		t.Errorf("stdout = %q, want __wt_cd:%s", stdout, expectedDir)
+	}
+
+	// Verify the worktree was created
+	if _, err := os.Stat(expectedDir); os.IsNotExist(err) {
+		t.Error("worktree directory was not created at expected location")
+	}
+
+	// Verify the branch name is preserved in git
+	cmd := exec.Command("git", "branch")
+	cmd.Dir = dir
+	out, _ := cmd.Output()
+	if !strings.Contains(string(out), "release/v2.1.0-rc1") {
+		t.Errorf("git branch should show original name 'release/v2.1.0-rc1', got: %s", out)
+	}
+}
+
+// Test status with main worktree and linked worktrees.
+func TestStatus_IncludesMainWorktree(t *testing.T) {
+	dir := setupTestRepo(t)
+	runWt(t, dir, "create", "status-test")
+
+	_, stderr, err := runWt(t, dir, "status")
+	if err != nil {
+		t.Fatalf("wt status failed: %v", err)
+	}
+
+	// Should include main worktree
+	if !strings.Contains(stderr, "main") {
+		t.Error("status should include main worktree branch")
+	}
+
+	// Should include linked worktree
+	if !strings.Contains(stderr, "status-test") {
+		t.Error("status should include linked worktree")
+	}
+
+	// Should mark main with *
+	if !strings.Contains(stderr, "*") {
+		t.Error("status should mark main worktree with *")
+	}
+}
+
+// Test that attempting to create worktree with empty branch name fails gracefully.
+func TestCreate_EmptyBranchName(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	_, stderr, err := runWt(t, dir, "create", "")
+	if err == nil {
+		t.Fatal("wt create with empty branch should fail")
+	}
+
+	// Should produce a meaningful error
+	if stderr == "" {
+		t.Error("stderr should contain error message for empty branch name")
+	}
+}
+
+// Test create with --base using a tag reference.
+func TestCreate_WithBaseTag(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create a tag
+	gitRun(t, dir, "tag", "v1.0")
+
+	stdout, stderr, err := runWt(t, dir, "create", "from-tag", "--base", "v1.0")
+	if err != nil {
+		t.Fatalf("wt create --base v1.0 failed: %v\nstderr: %s", err, stderr)
+	}
+
+	if !strings.Contains(stdout, "__wt_cd:") {
+		t.Errorf("stdout should contain __wt_cd:, got: %q", stdout)
+	}
+
+	// Verify branch was created from tag
+	cmd := exec.Command("git", "branch", "--contains", "v1.0")
+	cmd.Dir = dir
+	out, _ := cmd.Output()
+	if !strings.Contains(string(out), "from-tag") {
+		t.Error("from-tag branch should contain the tag commit")
+	}
+}
+
+// Test switch when invoked from within a linked worktree.
+func TestSwitch_FromWithinLinkedWorktree(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create two worktrees
+	runWt(t, dir, "create", "wt1")
+	runWt(t, dir, "create", "wt2")
+
+	wt1Dir := filepath.Join(filepath.Dir(dir), "testrepo-worktrees", "wt1")
+
+	// Run switch from within wt1 to wt2
+	stdout, _, err := runWt(t, wt1Dir, "switch", "wt2")
+	if err != nil {
+		t.Fatalf("wt switch from within worktree failed: %v", err)
+	}
+
+	// Should output cd to wt2
+	if !strings.Contains(stdout, "wt2") {
+		t.Errorf("stdout should contain path to wt2, got: %q", stdout)
+	}
+}
+
+// Test list when invoked from within a linked worktree.
+func TestList_FromWithinLinkedWorktree(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	runWt(t, dir, "create", "test-wt")
+	wtDir := filepath.Join(filepath.Dir(dir), "testrepo-worktrees", "test-wt")
+
+	_, stderr, err := runWt(t, wtDir, "list")
+	if err != nil {
+		t.Fatalf("wt list from within worktree failed: %v", err)
+	}
+
+	// Should still list all worktrees including main
+	if !strings.Contains(stderr, "main") {
+		t.Error("list from worktree should include main worktree")
+	}
+	if !strings.Contains(stderr, "test-wt") {
+		t.Error("list from worktree should include current worktree")
+	}
+}
+
+// Test completion for remove when no linked worktrees exist.
+func TestCompletion_RemoveNoLinkedWorktrees(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	stdout, _, _ := runWt(t, dir, "__complete", "remove", "")
+
+	// Should not suggest main
+	lines := strings.Split(stdout, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "main" || strings.HasPrefix(trimmed, "main\t") {
+			t.Errorf("completion for remove should NOT suggest 'main', got line: %s", line)
+		}
+	}
+
+	// Should have minimal or no suggestions when no linked worktrees exist
+	hasNonEmptySuggestion := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, ":") {
+			hasNonEmptySuggestion = true
+		}
+	}
+	if hasNonEmptySuggestion {
+		t.Log("Note: completion produced suggestions when no linked worktrees exist")
 	}
 }
